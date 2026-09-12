@@ -121,7 +121,7 @@ export type OpeningGroupHypothesis = {
 
 export type AppearanceFeature = {
   id: string
-  kind: 'BAND' | 'PORTAL' | 'RAILING' | 'CHIMNEY' | 'PIER' | 'PLINTH'
+  kind: 'BAND' | 'PORTAL' | 'RAILING' | 'CHIMNEY' | 'PIER' | 'PLINTH' | 'ROOFLIGHT'
   facade?: FacadeSide
   massId?: string
   /** Facade-local box, metres. */

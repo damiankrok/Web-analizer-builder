@@ -12,10 +12,73 @@ type Progress = { stage: string; detail?: string }
 type Result = {
   exports: Record<string, unknown>
   audit: { entries: AuditEntry[]; summary: Record<string, number>; conflicts: unknown[] }
+  printed?: PrintedResult
   geometry: { tris: ViewerTri[]; edges: ViewerEdge[]; quantities: Record<string, number> }
   views: ViewEntry[]
   performance: Record<string, number>
 }
+
+/** What the printed-dimension stage reports (WEB-02 §31). */
+type PrintedResult = {
+  resolution: Array<{
+    assetId: string
+    role: string
+    pagePx: { width: number; height: number } | null
+    analysedPx: { width: number; height: number }
+    variant: string
+    upgraded: boolean
+    usedForText: boolean
+  }>
+  alphabet: string
+  harvestedPositions: number
+  harvestedLabels: number
+  scales: Array<{ assetId: string; role: string; pixelsPerMetre: number }>
+  dimensions: Array<{
+    id: string
+    role: string
+    kind: string
+    text: string
+    metres: number | null
+    fidelity: string
+    lengthPx: number
+    confidence: number
+    note: string
+  }>
+  notes: string[]
+}
+
+type ResolvedGeometry = {
+  openingGroups: Array<{
+    id: string
+    facade: string
+    kind: string
+    widthM: number
+    heightM: number
+    sillY: number
+    panelCount: number
+    clippedByRoof: boolean
+    memberIds: string[]
+  }>
+  appearance: Array<{
+    id: string
+    kind: string
+    widthM?: number
+    heightM?: number
+    world?: { x: number; y: number; z: number }
+    confidence: number
+  }>
+}
+
+/**
+ * The resolved geometry, read out of the export bundle.
+ *
+ * The UI deliberately shows what was *exported* rather than a parallel view of
+ * the same data: a panel that disagrees with the export would hide exactly the
+ * kind of bug it exists to surface.
+ */
+const EMPTY_GEOMETRY: ResolvedGeometry = { openingGroups: [], appearance: [] }
+const geometryOf = (result: Result): ResolvedGeometry =>
+  (result.exports['resolved-building-geometry.json'] as ResolvedGeometry | undefined) ?? EMPTY_GEOMETRY
 
 type AuditEntry = {
   key: string
@@ -212,6 +275,174 @@ export function App(): JSX.Element {
                 ))}
               </div>
             ))}
+          </section>
+
+          {/* §31: source resolution — what was available, and what was analysed. */}
+          <section className="panel">
+            <h2>Source resolution</h2>
+            <p className="small">
+              The page embeds small copies of the technical drawings and links the originals. Printed
+              dimensions are read from whichever copy carries the most real pixels; nothing is upscaled.
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>asset</th>
+                  <th>page</th>
+                  <th>analysed</th>
+                  <th>variant</th>
+                  <th>text?</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(result.printed?.resolution ?? []).map((r) => (
+                  <tr key={r.assetId}>
+                    <td>{r.role}</td>
+                    <td className="num">{r.pagePx ? `${r.pagePx.width}\u00d7${r.pagePx.height}` : '\u2014'}</td>
+                    <td className="num">
+                      {r.analysedPx.width}\u00d7{r.analysedPx.height}
+                    </td>
+                    <td>
+                      <span className={`prov ${r.upgraded ? 'SOURCE_EXACT' : 'GEOMETRIC_INFERRED'}`}>
+                        {r.upgraded ? 'upgraded' : 'page'}
+                      </span>
+                    </td>
+                    <td>{r.usedForText ? 'yes' : '\u2014'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+
+          {/* §31: the dimension panel — reading, owner, fidelity, rejection reason. */}
+          <section className="panel">
+            <h2>Printed dimensions</h2>
+            <p className="small">
+              Alphabet learned from the drawings: <code>{result.printed?.alphabet || '\u2014'}</code> from{' '}
+              {result.printed?.harvestedPositions ?? 0} certain glyph positions across{' '}
+              {result.printed?.harvestedLabels ?? 0} labels. A reading counts only where it also agrees with
+              the geometry it annotates.
+            </p>
+            {(result.printed?.scales ?? []).length > 0 && (
+              <p className="small">
+                Scales settled from the readings:{' '}
+                {(result.printed?.scales ?? []).map((s) => `${s.role} ${s.pixelsPerMetre.toFixed(2)} px/m`).join(' \u00b7 ')}
+              </p>
+            )}
+            <table>
+              <thead>
+                <tr>
+                  <th>source</th>
+                  <th>kind</th>
+                  <th>read</th>
+                  <th>value</th>
+                  <th>fidelity</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(result.printed?.dimensions ?? []).map((d) => (
+                  <tr key={d.id}>
+                    <td>{d.role}</td>
+                    <td>{d.kind}</td>
+                    <td>
+                      <code>{d.text}</code>
+                      {d.lengthPx > 0 && <span className="small"> /{d.lengthPx.toFixed(0)}px</span>}
+                    </td>
+                    <td className="num">{d.metres === null ? '\u2014' : `${d.metres.toFixed(3)} m`}</td>
+                    <td title={d.note}>
+                      <span className={`prov ${d.fidelity}`}>{d.fidelity}</span>
+                    </td>
+                  </tr>
+                ))}
+                {(result.printed?.dimensions ?? []).length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="small">
+                      No label was read on this project. The notes below say why.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <div className="notes">
+              {(result.printed?.notes ?? []).map((n, i) => (
+                <div key={i} className="note">
+                  {n}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* §31: opening identity — the evidence behind one opening. */}
+          <section className="panel">
+            <h2>Opening identity</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>facade</th>
+                  <th>kind</th>
+                  <th>structural</th>
+                  <th>sill</th>
+                  <th>panels</th>
+                  <th>sources</th>
+                </tr>
+              </thead>
+              <tbody>
+                {geometryOf(result).openingGroups.map((g) => (
+                  <tr key={g.id}>
+                    <td>{g.facade}</td>
+                    <td>{g.kind}</td>
+                    <td className="num">
+                      {g.widthM.toFixed(2)}\u00d7{g.heightM.toFixed(2)} m
+                    </td>
+                    <td className="num">{g.sillY.toFixed(2)} m</td>
+                    <td className="num">
+                      {g.panelCount}
+                      {g.clippedByRoof ? ' (rake-clipped)' : ''}
+                    </td>
+                    <td className="small">{g.memberIds.length}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+
+          {/* §31: rooflight overlay — detection, owning plane, fused result. */}
+          <section className="panel">
+            <h2>Rooflights</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>size</th>
+                  <th>on the roof at</th>
+                  <th>placement</th>
+                  <th>confidence</th>
+                </tr>
+              </thead>
+              <tbody>
+                {geometryOf(result)
+                  .appearance.filter((a) => a.kind === 'ROOFLIGHT')
+                  .map((a) => (
+                    <tr key={a.id}>
+                      <td className="num">
+                        {(a.widthM ?? 0).toFixed(2)}\u00d7{(a.heightM ?? 0).toFixed(2)} m
+                      </td>
+                      <td className="num">
+                        x {a.world?.x.toFixed(2)} \u00b7 y {a.world?.y.toFixed(2)} \u00b7 z {a.world?.z.toFixed(2)}
+                      </td>
+                      <td className="small">in the roof plane</td>
+                      <td className="num">{a.confidence.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                {geometryOf(result).appearance.filter((a) => a.kind === 'ROOFLIGHT').length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="small">
+                      None detected. A unit that no elevation resolves is absent from the model rather than
+                      placed by guesswork.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </section>
 
           <section className="panel">

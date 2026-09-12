@@ -76,6 +76,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       payload: {
         exports: buildExports(result),
         audit: result.audit,
+        printed: result.printed,
         geometry: {
           tris: tess.tris.map((t) => ({ a: t.a, b: t.b, c: t.c, part: t.part, ownerId: t.ownerId })),
           edges: tess.edges.map((e) => ({ a: e.a, b: e.b, kind: e.kind })),

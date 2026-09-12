@@ -44,6 +44,34 @@ function quad(a: Vec3, b: Vec3, c: Vec3, d: Vec3, ownerId: string, part: BuildPa
   ]
 }
 
+/**
+ * Height of the roof surface over a plan position, for features that lie in
+ * it. Local to this module: the tessellator needs the slope at a point, not
+ * the mass bookkeeping the builder's version carries.
+ */
+function roofSample(h: BuildingHypothesis, x: number, z: number): number | null {
+  let best: number | null = null
+  for (const roof of h.roofs) {
+    const mass = h.masses.find((m) => m.id === roof.massId)
+    if (!mass) continue
+    const b = boundsOf(mass.footprint.outer)
+    const oh = roof.overhangM
+    if (x < b.minX - oh || x > b.maxX + oh || z < b.minZ - oh || z > b.maxZ + oh) continue
+    let y: number
+    if (roof.kind === 'FLAT' || roof.kind === 'NONE' || roof.pitchDeg <= 0) y = roof.ridgeY
+    else {
+      const alongZ = (roof.ridgeDir?.z ?? 1) !== 0
+      const centre = alongZ ? (b.minX + b.maxX) / 2 : (b.minZ + b.maxZ) / 2
+      const half = alongZ ? (b.maxX - b.minX) / 2 : (b.maxZ - b.minZ) / 2
+      const offset = Math.abs((alongZ ? x : z) - centre)
+      const t = half <= 0 ? 0 : Math.min(1, offset / half)
+      y = roof.ridgeY - (roof.ridgeY - roof.eaveY) * t
+    }
+    if (best === null || y > best) best = y
+  }
+  return best
+}
+
 /** Geometry for the named architectural features (§19, §37). */
 function appearanceGeometry(
   h: BuildingHypothesis,
@@ -83,6 +111,44 @@ function appearanceGeometry(
           ),
         )
         anchors.push({ id: `${f.id}_top`, kind: 'MASS_CORNER', world: v(f.world.x, top, f.world.z), ownerId: f.id, weight: 0.7 })
+        break
+      }
+      case 'ROOFLIGHT': {
+        if (!f.world) break
+        // A rooflight lies *in* the roof surface, so it is drawn as a glazed
+        // panel a few millimetres above the plane it belongs to, following the
+        // plane's slope. Drawing it upright — as an earlier version of the
+        // band feature did — makes it read as a dormer.
+        const half = (f.widthM ?? 1) / 2
+        const halfRun = (f.heightM ?? 0.8) / 2
+        const lift = 0.02
+        // Slope of the roof across x at this point, from two samples.
+        const slope = (() => {
+          const a = roofSample(h, f.world.x - halfRun, f.world.z)
+          const b = roofSample(h, f.world.x + halfRun, f.world.z)
+          return a !== null && b !== null ? (b - a) / (2 * halfRun) : 0
+        })()
+        const corners = [
+          { x: f.world.x - halfRun, z: f.world.z - half, y: f.world.y - slope * halfRun + lift },
+          { x: f.world.x + halfRun, z: f.world.z - half, y: f.world.y + slope * halfRun + lift },
+          { x: f.world.x + halfRun, z: f.world.z + half, y: f.world.y + slope * halfRun + lift },
+          { x: f.world.x - halfRun, z: f.world.z + half, y: f.world.y - slope * halfRun + lift },
+        ]
+        tris.push(
+          ...quad(
+            v(corners[0].x, corners[0].y, corners[0].z),
+            v(corners[1].x, corners[1].y, corners[1].z),
+            v(corners[2].x, corners[2].y, corners[2].z),
+            v(corners[3].x, corners[3].y, corners[3].z),
+            f.id,
+            'GLAZING',
+          ),
+        )
+        for (let i = 0; i < 4; i++) {
+          const p = corners[i]
+          const q = corners[(i + 1) % 4]
+          edges.push({ a: v(p.x, p.y, p.z), b: v(q.x, q.y, q.z), ownerId: f.id, kind: 'OPENING' })
+        }
         break
       }
       case 'BAND':

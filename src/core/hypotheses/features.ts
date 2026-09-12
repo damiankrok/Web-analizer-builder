@@ -51,6 +51,12 @@ export type FeatureContext = {
    * projecting element from a recessed one; a single facade cannot.
    */
   showsProjectionAt: (facade: FacadeSide, t: number) => boolean
+  /**
+   * The stretch of `facade` that actually has a mass behind it, as a
+   * facade-local interval. A slab can only hang off a wall, and on a plan with
+   * a wing the wall is not the whole facade line.
+   */
+  backedExtent: (facade: FacadeSide, s0: number, s1: number) => { s0: number; s1: number } | null
 }
 
 /** Default projection for an element whose depth no source dimensions. */
@@ -60,8 +66,15 @@ const RAILING_HEIGHT_M = 1.05
 const BAND_HEIGHT_M = 0.22
 /** A band is assigned to a level it sits within this distance of. */
 const LEVEL_TOLERANCE_M = 0.8
-/** Minimum rise for a roof protrusion to count as a stack. */
-const MIN_STACK_RISE_M = 0.5
+/**
+ * Minimum rise for a roof protrusion to count as a stack.
+ *
+ * A flue has to clear the roof it passes through by enough to draw, and
+ * building practice puts that at well over half a metre. Anything shorter
+ * standing on a roof plane in an elevation is the silhouette of something
+ * behind it — most often the parapet of an adjoining wing.
+ */
+const MIN_STACK_RISE_M = 0.8
 /** How far a detected stack base may sit from the roof surface and still snap. */
 const MAX_STACK_SNAP_M = 0.6
 /**
@@ -152,10 +165,24 @@ export function solveFeatures(sets: readonly FacadeFeatureSet[], ctx: FeatureCon
       // Bands at the very foot or at roof level are the plinth and the eave;
       // both are already represented by the masses and the roof.
       if (band.t < 0.5 || band.t > ctx.eaveY - 0.2) continue
-      const s0 = band.s0 * k
-      const s1 = band.s1 * k
+      // Clip the band to the stretch of this facade that has a wall behind it.
+      // An elevation draws its bands across the whole drawing, including the
+      // part where the building has stepped away, and a feature modelled on
+      // the unclipped extent projects into open air beside the wing.
+      const rawS0 = band.s0 * k
+      const rawS1 = band.s1 * k
+      const clipped = ctx.backedExtent(set.facade, rawS0, rawS1)
+      if (!clipped) continue
+      const s0 = clipped.s0
+      const s1 = clipped.s1
       const widthM = s1 - s0
       if (widthM < frame.widthM * 0.15) continue
+      if (rawS1 - rawS0 - widthM > 0.3) {
+        notes.push(
+          `${set.facade}: band at ${band.t.toFixed(2)} m clipped from ${(rawS1 - rawS0).toFixed(2)} m to ` +
+            `${widthM.toFixed(2)} m, the stretch with a wall behind it`,
+        )
+      }
 
       // Which mass sits under the band's midpoint? A band that runs past that
       // mass's own extent is carried by something projecting — a canopy over an
@@ -208,12 +235,26 @@ export function solveFeatures(sets: readonly FacadeFeatureSet[], ctx: FeatureCon
         const target = ctx.masses.find((m) => m.kind === 'MAIN_BODY') ?? ctx.masses[0]
         if (!target) continue
         const projects = ctx.showsProjectionAt(set.facade, band.t)
-        if (projects) {
+        // A projecting slab must have building behind every part of it. The
+        // elevation shows the band across the whole drawing, and on a plan with
+        // a wing that is wider than the wall the slab could hang from: taken
+        // literally it produces a nine-metre balcony whose outer half floats in
+        // front of nothing. Clipping to the backed stretch is what keeps a
+        // correct reading of the elevation from becoming a wrong piece of
+        // geometry.
+        const backed = projects ? ctx.backedExtent(set.facade, s0, s1) : null
+        if (projects && backed && backed.s1 - backed.s0 >= 0.8) {
           const slabId = mkId('mass', 'balcony', set.facade, band.t.toFixed(2))
+          if (backed.s1 - backed.s0 < (s1 - s0) - 0.2) {
+            notes.push(
+              `${set.facade}: projecting balcony clipped from ${(s1 - s0).toFixed(2)} m to ` +
+                `${(backed.s1 - backed.s0).toFixed(2)} m, the stretch with a wall behind it`,
+            )
+          }
           masses.push({
             id: slabId,
             kind: 'BALCONY_SLAB',
-            footprint: { outer: slabRing(frame, s0, s1, DEFAULT_BALCONY_DEPTH_M, ctx), holes: [] },
+            footprint: { outer: slabRing(frame, backed.s0, backed.s1, DEFAULT_BALCONY_DEPTH_M, ctx), holes: [] },
             baseY: band.t - 0.22,
             topY: band.t,
             storeyIds: [],
@@ -237,6 +278,12 @@ export function solveFeatures(sets: readonly FacadeFeatureSet[], ctx: FeatureCon
               'a perpendicular elevation shows the step',
           )
         } else {
+          if (projects && (!backed || backed.s1 - backed.s0 < 0.8)) {
+            notes.push(
+              `${set.facade}: a perpendicular elevation steps at ${band.t.toFixed(2)} m but no wall backs the band; ` +
+                'read as a set-back storey rather than a projecting slab',
+            )
+          }
           recesses.push({
             massId: target.id,
             facade: set.facade,
@@ -406,6 +453,7 @@ export function solveFeatures(sets: readonly FacadeFeatureSet[], ctx: FeatureCon
   }
 
   resolveStacks(stackObs, ctx, appearance, notes)
+  mergeRailings(appearance, notes)
 
   return { masses, roofs, appearance, openingGroups, openings, recesses, notes }
 }
@@ -556,4 +604,42 @@ function resolveStacks(
     if (usedZ.has(g)) continue
     emit(midX, g.coord, g, null)
   }
+}
+
+/**
+ * Collapse railings that describe the same balustrade.
+ *
+ * Two bands at slightly different heights across one facade are one railing
+ * seen twice — the slab's top edge and its fascia read as separate bands once
+ * the elevation is detailed enough to resolve both. Emitting both puts a
+ * second balustrade a few centimetres from the first; keeping the wider is the
+ * same identity rule applied to a linear feature.
+ */
+function mergeRailings(appearance: AppearanceFeature[], notes: string[]): void {
+  const railings = appearance.filter((f) => f.kind === 'RAILING')
+  const drop = new Set<string>()
+  for (let i = 0; i < railings.length; i++) {
+    for (let j = i + 1; j < railings.length; j++) {
+      const a = railings[i]
+      const b = railings[j]
+      if (a.facade !== b.facade) continue
+      if (Math.abs((a.t ?? 0) - (b.t ?? 0)) > 0.8) continue
+      const a0 = a.s ?? 0
+      const a1 = a0 + (a.widthM ?? 0)
+      const b0 = b.s ?? 0
+      const b1 = b0 + (b.widthM ?? 0)
+      const overlap = Math.min(a1, b1) - Math.max(a0, b0)
+      if (overlap <= 0) continue
+      const loser = (a.widthM ?? 0) >= (b.widthM ?? 0) ? b : a
+      const winner = loser === a ? b : a
+      if (drop.has(loser.id)) continue
+      drop.add(loser.id)
+      notes.push(
+        `${loser.facade}: railing at ${(loser.t ?? 0).toFixed(2)} m merged into the one at ` +
+          `${(winner.t ?? 0).toFixed(2)} m; one balustrade seen as two bands`,
+      )
+    }
+  }
+  if (drop.size === 0) return
+  for (let i = appearance.length - 1; i >= 0; i--) if (drop.has(appearance[i].id)) appearance.splice(i, 1)
 }

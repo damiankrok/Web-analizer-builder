@@ -24,7 +24,9 @@ import type {
 import type { Polygon2D, Vec2 } from '../contracts/geometry.js'
 import { boundsOf, polygonArea, rectRing } from '../contracts/geometry.js'
 import { mkId } from '../util/ids.js'
-import { facadeFrame } from './frames.js'
+import { facadeFrame, facadePlanPoint } from './frames.js'
+import { fuseRooflights } from '../roof/rooflights.js'
+import { resolveOpenings, type OpeningObservation } from '../openings/identity.js'
 import { solveFeatures, type FeatureContext } from './features.js'
 import type { FacadeFeatureSet } from '../scaffold/facade-features.js'
 
@@ -190,6 +192,46 @@ export function showsProjectionAt(sets: readonly FacadeFeatureSet[], facade: Fac
   return false
 }
 
+/**
+ * The stretch of a facade with a mass behind it, in facade-local metres.
+ *
+ * A facade line runs the full width of the building's bounding box, but on a
+ * plan with a wing only part of it is wall: the rest is open ground beside the
+ * wing. A slab hung from the whole line therefore floats for part of its
+ * length, which is exactly what an elevation, read without the plan, invites.
+ */
+export function backedExtent(
+  masses: readonly MassHypothesis[],
+  bounds: ReturnType<typeof boundsOf>,
+  facade: FacadeSide,
+  s0: number,
+  s1: number,
+): { s0: number; s1: number } | null {
+  const frame = facadeFrame(facade, bounds)
+  const steps = Math.max(8, Math.ceil((s1 - s0) / 0.1))
+  const tol = 0.35
+  let first = -1
+  let last = -1
+  for (let i = 0; i <= steps; i++) {
+    const s = s0 + ((s1 - s0) * i) / steps
+    const p = facadePlanPoint(frame, s)
+    // Is there a mass whose footprint reaches this facade plane here?
+    const backedHere = masses.some((m) => {
+      if (m.kind === 'BALCONY_SLAB' || m.kind === 'CANOPY') return false
+      const b = boundsOf(m.footprint.outer)
+      if (facade === 'FRONT') return Math.abs(b.minZ - p.z) <= tol && p.x >= b.minX - tol && p.x <= b.maxX + tol
+      if (facade === 'REAR') return Math.abs(b.maxZ - p.z) <= tol && p.x >= b.minX - tol && p.x <= b.maxX + tol
+      if (facade === 'LEFT') return Math.abs(b.minX - p.x) <= tol && p.z >= b.minZ - tol && p.z <= b.maxZ + tol
+      return Math.abs(b.maxX - p.x) <= tol && p.z >= b.minZ - tol && p.z <= b.maxZ + tol
+    })
+    if (!backedHere) continue
+    if (first < 0) first = i
+    last = i
+  }
+  if (first < 0) return null
+  return { s0: s0 + ((s1 - s0) * first) / steps, s1: s0 + ((s1 - s0) * last) / steps }
+}
+
 export function buildHypothesis(inputs: BuilderInputs): BuildingHypothesis {
   const s = inputs.scaffold
   const notes: string[] = []
@@ -312,12 +354,94 @@ export function buildHypothesis(inputs: BuilderInputs): BuildingHypothesis {
     roofHeightAt: (x, z) => roofHeightAt(masses, roofs, x, z),
     roofSupportAt: (x, z) => roofHeightAt(masses, roofs, x, z, { includeOverhang: false }),
     showsProjectionAt: (facade, t) => showsProjectionAt(inputs.facadeFeatures, facade, t),
+    backedExtent: (facade, s0, s1) => backedExtent(masses, bounds, facade, s0, s1),
   }
   const features = solveFeatures(inputs.facadeFeatures, featureCtx)
+  // Rooflights are fused across elevations onto the roof planes here rather
+  // than emitted per facade: one unit seen from two sides is one unit, and two
+  // orthogonal views are what give it a real position instead of a mid-line
+  // guess (§21).
+  const rooflightFusion = fuseRooflights(
+    inputs.facadeFeatures.flatMap((f) => f.rooflights.observations),
+    roofs,
+    (facade: FacadeSide, s: number) => {
+      const frame = facadeFrame(facade, bounds)
+      return facadePlanPoint(frame, s)
+    },
+    (x: number, z: number) => roofHeightAt(masses, roofs, x, z),
+    { minX: bounds.minX, maxX: bounds.maxX, minZ: bounds.minZ, maxZ: bounds.maxZ },
+  )
+  notes.push(...rooflightFusion.notes)
   notes.push(...features.notes)
   masses.push(...features.masses)
   roofs.push(...features.roofs)
-  const appearance: AppearanceFeature[] = [...features.appearance]
+  // --- opening identity ------------------------------------------------
+  //
+  // One window is one window. The solver produces a group per elevation
+  // rectangle, and a printed callout — where the recogniser reached one —
+  // states the same opening's exact size. Passing them through the identity
+  // resolver merges the observations of each physical opening, lets the
+  // stronger authority set each dimension, keeps the disagreements, and
+  // recovers the panel structure that a single rectangle cannot express
+  // (§18, §19).
+  const observations: OpeningObservation[] = features.openingGroups.map((g) => ({
+    id: g.id,
+    source: 'ELEVATION_RECT' as const,
+    assetId: inputs.facadeFeatures.find((f) => f.facade === g.facade)?.assetId ?? '',
+    facade: g.facade,
+    s: g.s,
+    widthM: g.widthM,
+    sillY: g.sillY,
+    heightM: g.heightM,
+    authority: g.authority,
+    confidence: g.confidence,
+    panelCount: g.panelCount,
+    clippedByRoof: g.clippedByRoof,
+  }))
+  const identity = resolveOpenings(observations, (facade, s) => {
+    const frame = facadeFrame(facade, bounds)
+    const p = facadePlanPoint(frame, s)
+    const host = masses.find((m) => {
+      const b = boundsOf(m.footprint.outer)
+      return p.x >= b.minX - 0.4 && p.x <= b.maxX + 0.4 && p.z >= b.minZ - 0.4 && p.z <= b.maxZ + 0.4
+    })
+    return host?.kind ?? 'MAIN_BODY'
+  })
+  notes.push(...identity.notes)
+  const resolvedGroups: OpeningGroupHypothesis[] = identity.openings.map((o) => {
+    const seed = features.openingGroups.find((g) => o.observations.some((x) => x.id === g.id))
+    return {
+      id: o.id,
+      facade: o.facade,
+      massId: seed?.massId ?? '',
+      kind: o.kind,
+      memberIds: o.observations.map((x) => x.id),
+      s: o.s,
+      sillY: o.sillY,
+      widthM: o.widthM,
+      heightM: o.heightM,
+      panelCount: o.panelCount,
+      clippedByRoof: o.clippedByRoof,
+      authority: o.authority,
+      confidence: o.confidence,
+    }
+  })
+  for (const o of identity.openings) {
+    for (const c of o.conflicts) notes.push(`opening ${o.id}: ${c.note}`)
+  }
+
+  const appearance: AppearanceFeature[] = [
+    ...features.appearance,
+    ...rooflightFusion.rooflights.map((r) => ({
+      id: r.id,
+      kind: 'ROOFLIGHT' as const,
+      world: r.world,
+      widthM: r.widthM,
+      heightM: r.heightM,
+      authority: 'ELEVATION_MEASURED' as const,
+      confidence: r.confidence,
+    })),
+  ]
 
   // Apply set-backs. All recesses on one mass are applied together and the
   // mass is split once: two facades each showing a balcony describe one upper
@@ -378,11 +502,21 @@ export function buildHypothesis(inputs: BuilderInputs): BuildingHypothesis {
   const legacy = buildOpenings(s.elevations, bounds, masses, annexTopY)
   const facadesWithFeatures = new Set(features.openingGroups.map((g) => g.facade))
   const groups = [
-    ...features.openingGroups,
+    ...resolvedGroups,
     ...legacy.groups.filter((g) => !facadesWithFeatures.has(g.facade)),
   ]
+  // The identity resolver renamed the groups, so the legacy per-opening records
+  // are matched through the member ids each resolved group carries.
+  const memberToGroup = new Map<string, string>()
+  for (const g of groups) for (const m of g.memberIds) memberToGroup.set(m, g.id)
   const groupIds = new Set(groups.map((g) => g.id))
-  const openings = legacy.openings.filter((o) => o.groupId !== undefined && groupIds.has(o.groupId))
+  const openings = legacy.openings
+    .map((o) =>
+      o.groupId !== undefined && memberToGroup.has(o.groupId)
+        ? { ...o, groupId: memberToGroup.get(o.groupId) as string }
+        : o,
+    )
+    .filter((o) => o.groupId !== undefined && groupIds.has(o.groupId))
 
   // --- hard constraints ------------------------------------------------
   const constraints: MetricConstraint[] = []

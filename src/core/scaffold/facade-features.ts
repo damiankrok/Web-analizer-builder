@@ -32,6 +32,7 @@ import { cannyEdges } from '../raster/filters.js'
 import type { FacadeSide } from '../contracts/hypotheses.js'
 import { cluster1D, significantClusters } from './cluster.js'
 import { findOpeningRectangles, DEFAULT_OPENING_DETECT, type OpeningRect } from './openings.js'
+import { detectRooflights, DEFAULT_ROOFLIGHTS } from '../roof/rooflights.js'
 import { facadeSkyline, type ConditionedSilhouette } from './silhouette.js'
 
 export type FacadeBand = {
@@ -74,6 +75,8 @@ export type FacadeFeatureSet = {
   protrusions: FacadeProtrusion[]
   roofOpenings: RoofOpening[]
   openings: OpeningRect[]
+  /** Rooflights found in this facade's roof surface, with the rejections (§20). */
+  rooflights: RooflightEvidence
   /** Glazed gable infill, when this facade shows a gable. */
   gableInfill: GableInfill | null
   /** Facade-local metres per pixel. */
@@ -419,6 +422,12 @@ export function detectGableInfill(
   }
 }
 
+export type RooflightEvidence = {
+  observations: import('../roof/rooflights.js').RooflightObservation[]
+  rejections: import('../roof/rooflights.js').RooflightRejection[]
+  notes: string[]
+}
+
 export type FacadeSolveInput = {
   facade: FacadeSide
   assetId: string
@@ -473,7 +482,46 @@ export function solveFacadeFeatures(input: FacadeSolveInput): FacadeFeatureSet {
   const eaveRow =
     input.eaveHeightM !== null && mpp > 0 ? sil.groundRow - input.eaveHeightM / mpp : sil.topRow + (sil.groundRow - sil.topRow) * 0.45
   const roofOpenings = mpp > 0 ? detectRoofOpenings(rects, eaveRow, mpp, sil) : []
-  const wallRects = rects.filter((r) => r.y1 >= eaveRow)
+
+  // Rooflights are searched for in the roof surface only — the silhouette
+  // above the eave line — because "strictly inside the plane" is the test that
+  // separates an opening in the surface from an eave shadow or a dormer, and
+  // it means nothing against a region that includes the walls (§20).
+  const roofRegion = makeMask(w, input.gray.height)
+  if (mpp > 0) {
+    for (let y = 0; y < Math.min(input.gray.height, Math.floor(eaveRow)); y++) {
+      for (let x = sil.minX; x <= sil.maxX; x++) {
+        const i = y * w + x
+        roofRegion.data[i] = region.data[i]
+      }
+    }
+  }
+  const rooflightEvidence: RooflightEvidence =
+    mpp > 0
+      ? detectRooflights(
+          input.assetId,
+          'ELEVATION',
+          input.gray,
+          roofRegion,
+          mpp,
+          { row: sil.groundRow, minX: sil.minX },
+          DEFAULT_ROOFLIGHTS,
+          input.facade,
+        )
+      : { observations: [], rejections: [], notes: ['no vertical scale: rooflights not searched'] }
+  notes.push(...rooflightEvidence.notes.map((n) => `rooflights: ${n}`))
+  // A wall opening lies below the eave. Above it the elevation shows roof, and
+  // a rectangle found there is a rooflight, a tile course or the roof's own
+  // outline — not a window. The exception is a gable end, whose wall genuinely
+  // continues up into the triangle; that glazing is found separately, by the
+  // infill detector, because its head is cut by the roof planes.
+  const gableEnd = input.roofPitchDeg !== null && input.roofPitchDeg > 1
+  const wallRects = rects.filter((r) => (gableEnd ? r.y1 >= eaveRow : r.y0 >= eaveRow))
+  if (rects.length !== wallRects.length) {
+    notes.push(
+      `${rects.length - wallRects.length} of ${rects.length} rectangles sit above the eave line and are not wall openings`,
+    )
+  }
 
   if (wallRects.length === 0) notes.push('no framed openings found on this facade')
   if (protrusions.length > 0) notes.push(`${protrusions.length} protrusion(s) above the roof silhouette`)
@@ -502,6 +550,7 @@ export function solveFacadeFeatures(input: FacadeSolveInput): FacadeFeatureSet {
     protrusions,
     roofOpenings,
     openings: wallRects,
+    rooflights: rooflightEvidence,
     metresPerPixel: mpp,
     groundRow: sil.groundRow,
     minX: sil.minX,
