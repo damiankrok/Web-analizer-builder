@@ -233,6 +233,7 @@ export function buildMetricScaffold(
       a.asset.role,
       a.raster.image,
       a.raster.gray,
+      a.raster.gradients,
       a.raster.building.mask,
       publishedHeight,
     )

@@ -40,6 +40,12 @@ export type FeatureContext = {
    */
   roofHeightAt: (x: number, z: number) => number | null
   /**
+   * Same, but only where the roof is carried by the mass below it. The
+   * overhang is a soffit with nothing above it, so a flue can rise through the
+   * supported part of a roof and nowhere else.
+   */
+  roofSupportAt: (x: number, z: number) => number | null
+  /**
    * Whether any elevation perpendicular to `facade` shows the silhouette
    * stepping outwards at height `t`. This is the cross-source test that tells a
    * projecting element from a recessed one; a single facade cannot.
@@ -58,6 +64,34 @@ const LEVEL_TOLERANCE_M = 0.8
 const MIN_STACK_RISE_M = 0.5
 /** How far a detected stack base may sit from the roof surface and still snap. */
 const MAX_STACK_SNAP_M = 0.6
+/**
+ * How far apart two stack observations may sit along their shared axis and
+ * still be the same flue. A flue is roughly this wide, so anything closer is
+ * one shaft seen twice rather than two shafts.
+ */
+const STACK_MERGE_TOLERANCE_M = 1.2
+
+/**
+ * One elevation's view of something standing above the roof.
+ *
+ * An elevation spreads the building across one plan axis and collapses the
+ * other, so a protrusion seen in it is localised on `axis` and completely
+ * unconstrained on the perpendicular axis. Keeping that asymmetry explicit is
+ * what allows two orthogonal elevations to be intersected later instead of
+ * each guessing a mid-line.
+ */
+type StackObservation = {
+  facade: FacadeSide
+  /** Plan axis this observation pins down. */
+  axis: 'X' | 'Z'
+  /** Plan point on the facade at the observation's position. */
+  along: { x: number; z: number }
+  widthM: number
+  /** Top of the protrusion above the finished floor. */
+  topT: number
+  /** How far it stands proud of the fitted roof line, in the elevation. */
+  riseM: number
+}
 
 /**
  * A storey set back behind the one below it, which is what creates a balcony
@@ -102,6 +136,7 @@ export function solveFeatures(sets: readonly FacadeFeatureSet[], ctx: FeatureCon
   const openings: OpeningHypothesis[] = []
   const recesses: MassRecess[] = []
   const notes: string[] = []
+  const stackObs: StackObservation[] = []
 
   for (const set of sets) {
     const frame = facadeFrame(set.facade, ctx.bounds)
@@ -351,41 +386,26 @@ export function solveFeatures(sets: readonly FacadeFeatureSet[], ctx: FeatureCon
       })
     }
 
-    // --- chimneys ---------------------------------------------------------
+    // --- stacks -----------------------------------------------------------
+    // Collected, not emitted: one physical flue is seen by every elevation
+    // that faces it, and each of those views constrains only the axis it
+    // spreads across. Resolving them together (below) is what turns two
+    // one-dimensional observations into one three-dimensional stack; emitting
+    // them here would produce one duplicate per view.
     for (const p of set.protrusions) {
       if (p.heightM < MIN_STACK_RISE_M) continue
-      const s = p.s * k
-      const plan = facadePlanPoint(frame, s)
-      // The facade gives the stack's position across the building but nothing
-      // about its depth, so it is placed on the ridge line, which is where a
-      // flue emerges on a pitched roof.
-      const world = isGable
-        ? { x: plan.x, y: 0, z: (ctx.bounds.minZ + ctx.bounds.maxZ) / 2 }
-        : { x: (ctx.bounds.minX + ctx.bounds.maxX) / 2, y: 0, z: plan.z }
-      const roofY = ctx.roofHeightAt(world.x, world.z)
-      if (roofY === null) {
-        notes.push(`${set.facade}: protrusion at s=${p.s.toFixed(2)} m is not above any roof; discarded`)
-        continue
-      }
-      const detectedBase = p.topT - p.heightM
-      if (Math.abs(detectedBase - roofY) > MAX_STACK_SNAP_M) {
-        notes.push(
-          `${set.facade}: protrusion at s=${p.s.toFixed(2)} m has its base ${detectedBase.toFixed(2)} m ` +
-            `against a roof surface at ${roofY.toFixed(2)} m; treated as a mass step, not a stack`,
-        )
-        continue
-      }
-      appearance.push({
-        id: mkId('feat', 'chimney', set.facade, p.s.toFixed(2)),
-        kind: 'CHIMNEY',
-        world: { ...world, y: roofY },
+      stackObs.push({
+        facade: set.facade,
+        axis: isGable ? 'X' : 'Z',
+        along: facadePlanPoint(frame, p.s * k),
         widthM: Math.max(0.4, Math.min(1.2, p.widthM * k)),
-        heightM: Math.max(MIN_STACK_RISE_M, p.topT - roofY),
-        authority: 'ELEVATION_MEASURED',
-        confidence: 0.5,
+        topT: p.topT,
+        riseM: p.heightM,
       })
     }
   }
+
+  resolveStacks(stackObs, ctx, appearance, notes)
 
   return { masses, roofs, appearance, openingGroups, openings, recesses, notes }
 }
@@ -416,4 +436,124 @@ function slabRing(
   const maxZ = Math.max(a.z, b.z, outA.z, outB.z)
   void ctx
   return rectRing(minX, minZ, maxX, maxZ)
+}
+
+/**
+ * Turning stack observations into physical stacks (§30, §34).
+ *
+ * Three things happen here that a per-facade loop cannot do.
+ *
+ * 1. *Identity.* The same flue is seen by every elevation that faces it. Two
+ *    observations pinning the same coordinate to within a flue's width are one
+ *    stack, so they are merged rather than emitted twice — the same rule the
+ *    evidence graph applies to duplicate observations of one feature.
+ *
+ * 2. *Triangulation.* A gable-end elevation fixes the stack's X and says
+ *    nothing about Z; a side elevation fixes Z and says nothing about X.
+ *    Intersecting one of each gives a genuine three-dimensional position. Only
+ *    when the perpendicular view is missing does the stack fall back to the
+ *    ridge line, and that fallback is recorded as such.
+ *
+ * 3. *Plausibility.* A flue passes through the roof, so it must stand clear of
+ *    the roof's own boundary by at least its half-width. A protrusion hugging
+ *    the edge of the roof is the silhouette of a taller mass behind it, not a
+ *    chimney, and is rejected — the failure mode that otherwise plants a stub
+ *    stack wherever two masses of different heights meet.
+ */
+function resolveStacks(
+  obs: readonly StackObservation[],
+  ctx: FeatureContext,
+  appearance: AppearanceFeature[],
+  notes: string[],
+): void {
+  // Merge observations that pin the same coordinate on the same axis.
+  type Group = { axis: 'X' | 'Z'; coord: number; widthM: number; topT: number; riseM: number; facades: FacadeSide[] }
+  const groups: Group[] = []
+  for (const o of obs) {
+    const coord = o.axis === 'X' ? o.along.x : o.along.z
+    const hit = groups.find((g) => g.axis === o.axis && Math.abs(g.coord - coord) <= STACK_MERGE_TOLERANCE_M)
+    if (hit) {
+      // Two views of one shaft: keep the widest section and the highest top,
+      // since an elevation can only ever under-report both through occlusion.
+      hit.coord = (hit.coord + coord) / 2
+      hit.widthM = Math.max(hit.widthM, o.widthM)
+      hit.topT = Math.max(hit.topT, o.topT)
+      hit.riseM = Math.max(hit.riseM, o.riseM)
+      if (!hit.facades.includes(o.facade)) hit.facades.push(o.facade)
+      continue
+    }
+    groups.push({ axis: o.axis, coord, widthM: o.widthM, topT: o.topT, riseM: o.riseM, facades: [o.facade] })
+  }
+
+  const alongX = groups.filter((g) => g.axis === 'X')
+  const alongZ = groups.filter((g) => g.axis === 'Z')
+  const usedZ = new Set<Group>()
+  const midX = (ctx.bounds.minX + ctx.bounds.maxX) / 2
+  const midZ = (ctx.bounds.minZ + ctx.bounds.maxZ) / 2
+
+  const emit = (x: number, z: number, g: Group, partner: Group | null): void => {
+    const roofY = ctx.roofHeightAt(x, z)
+    if (roofY === null) {
+      notes.push(`stack at (${x.toFixed(2)}, ${z.toFixed(2)}) is not above any roof; discarded`)
+      return
+    }
+    const detectedBase = g.topT - g.riseM
+    if (Math.abs(detectedBase - roofY) > MAX_STACK_SNAP_M) {
+      notes.push(
+        `stack at (${x.toFixed(2)}, ${z.toFixed(2)}) has its base ${detectedBase.toFixed(2)} m ` +
+          `against a roof surface at ${roofY.toFixed(2)} m; treated as a mass step, not a stack`,
+      )
+      return
+    }
+    // A flue rises from inside the building and passes through one continuous
+    // roof surface. Two things follow, and together they reject the stub stack
+    // that otherwise appears wherever two masses of different heights meet.
+    //
+    // First, the whole shaft must stand over supported roof: the overhang is a
+    // soffit with nothing above it, so a shaft crossing the eave line is the
+    // silhouette of something behind the roof, not a flue through it.
+    //
+    // Second, the surface must continue smoothly across the shaft. The
+    // steepest roof in the model bounds how much it may legally change over
+    // the shaft's half-width; beyond that is a step between two roofs.
+    const half = g.widthM / 2
+    const maxSlope = ctx.roofs.reduce((m, r) => Math.max(m, Math.tan((r.pitchDeg * Math.PI) / 180)), 0)
+    const allowed = half * maxSlope + 0.15
+    const carried = (px: number, pz: number): boolean => {
+      const h = ctx.roofSupportAt(px, pz)
+      return h !== null && Math.abs(h - roofY) <= allowed
+    }
+    if (!carried(x, z) || !carried(x - half, z) || !carried(x + half, z) || !carried(x, z - half) || !carried(x, z + half)) {
+      notes.push(
+        `stack at (${x.toFixed(2)}, ${z.toFixed(2)}) does not stand clear over supported roof; ` +
+          `read as the silhouette of an adjoining mass, not a flue`,
+      )
+      return
+    }
+    appearance.push({
+      id: mkId('feat', 'chimney', g.axis, g.coord.toFixed(2)),
+      kind: 'CHIMNEY',
+      world: { x, y: roofY, z },
+      widthM: g.widthM,
+      heightM: Math.max(MIN_STACK_RISE_M, g.topT - roofY),
+      authority: 'ELEVATION_MEASURED',
+      // Two orthogonal views fix the position outright; one view leaves the
+      // perpendicular coordinate assumed, and the confidence has to say so.
+      confidence: partner ? 0.72 : 0.5,
+    })
+  }
+
+  for (const g of alongX) {
+    // Pair with a perpendicular observation whose top agrees: same shaft.
+    const partner = alongZ
+      .filter((c) => !usedZ.has(c))
+      .sort((a, b) => Math.abs(a.topT - g.topT) - Math.abs(b.topT - g.topT))
+      .find((c) => Math.abs(c.topT - g.topT) <= MAX_STACK_SNAP_M)
+    if (partner) usedZ.add(partner)
+    emit(g.coord, partner ? partner.coord : midZ, g, partner ?? null)
+  }
+  for (const g of alongZ) {
+    if (usedZ.has(g)) continue
+    emit(midX, g.coord, g, null)
+  }
 }

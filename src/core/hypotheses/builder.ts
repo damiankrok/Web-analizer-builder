@@ -115,13 +115,14 @@ export function roofHeightAt(
   roofs: readonly RoofHypothesis[],
   x: number,
   z: number,
+  opts: { includeOverhang?: boolean } = {},
 ): number | null {
   let best: number | null = null
   for (const roof of roofs) {
     const mass = masses.find((m) => m.id === roof.massId)
     if (!mass) continue
     const b = boundsOf(mass.footprint.outer)
-    const oh = roof.overhangM
+    const oh = opts.includeOverhang === false ? 0 : roof.overhangM
     if (x < b.minX - oh || x > b.maxX + oh || z < b.minZ - oh || z > b.maxZ + oh) continue
     let y: number
     if (roof.kind === 'FLAT' || roof.kind === 'NONE' || roof.pitchDeg <= 0) {
@@ -309,6 +310,7 @@ export function buildHypothesis(inputs: BuilderInputs): BuildingHypothesis {
     gableFacades: inputs.gableFacades,
     wallThicknessM: s.wallThicknessM,
     roofHeightAt: (x, z) => roofHeightAt(masses, roofs, x, z),
+    roofSupportAt: (x, z) => roofHeightAt(masses, roofs, x, z, { includeOverhang: false }),
     showsProjectionAt: (facade, t) => showsProjectionAt(inputs.facadeFeatures, facade, t),
   }
   const features = solveFeatures(inputs.facadeFeatures, featureCtx)

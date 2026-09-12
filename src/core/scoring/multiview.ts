@@ -17,7 +17,7 @@
  */
 import type { ConstraintCheck, BuildingHypothesis } from '../contracts/hypotheses.js'
 import type { ElevationScoreBreakdown, MultiViewScore, ViewScoreBreakdown } from '../contracts/scoring.js'
-import { boundsOf, polygonArea } from '../contracts/geometry.js'
+import { boundsOf, polygonArea, rectUnionArea } from '../contracts/geometry.js'
 
 export type MultiViewWeights = {
   metric: number
@@ -46,7 +46,7 @@ export function checkConstraints(h: BuildingHypothesis): ConstraintCheck[] {
     let actual: number | null = null
     switch (c.key) {
       case 'footprint_area':
-        actual = h.masses.reduce((sum, m) => sum + Math.abs(polygonArea(m.footprint.outer)), 0)
+        actual = groundFootprintArea(h)
         break
       case 'building_height': {
         const ridge = Math.max(...h.roofs.map((r) => r.ridgeY), 0)
@@ -88,6 +88,19 @@ export function checkConstraints(h: BuildingHypothesis): ConstraintCheck[] {
     })
   }
   return out
+}
+
+/**
+ * Built area at ground level: the union of the ground-bearing masses' plan
+ * outlines. Slabs and canopies overhead are not footprint, and a storey set
+ * back above another one is the same ground twice.
+ */
+export function groundFootprintArea(h: BuildingHypothesis): number {
+  const ground = h.masses.filter(
+    (m) => m.baseY <= 0.25 && m.kind !== 'BALCONY_SLAB' && m.kind !== 'CANOPY',
+  )
+  if (ground.length === 0) return 0
+  return rectUnionArea(ground.map((m) => m.footprint.outer))
 }
 
 export type MultiViewInput = {

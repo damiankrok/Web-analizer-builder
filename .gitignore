@@ -4,3 +4,4 @@ out/
 fixtures/*/assets/
 *.log
 .vite/
+dist-ui/

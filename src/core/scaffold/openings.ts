@@ -47,6 +47,11 @@ export type OpeningDetectOptions = {
   borderTolerance: number
   /** Overlap above which two rectangles are treated as the same opening. */
   suppressIoU: number
+  /**
+   * Shortest straight run, as a fraction of the perpendicular facade extent,
+   * that may stand for an architectural line.
+   */
+  minRunFraction: number
 }
 
 export const DEFAULT_OPENING_DETECT: OpeningDetectOptions = {
@@ -59,15 +64,32 @@ export const DEFAULT_OPENING_DETECT: OpeningDetectOptions = {
   maxAspect: 9,
   borderTolerance: 2,
   suppressIoU: 0.3,
+  minRunFraction: 0.06,
 }
 
-/** Rows and columns carrying the facade's dominant straight lines. */
+/**
+ * Rows and columns carrying the facade's dominant straight lines.
+ *
+ * Support is counted in *edge pixels*, not summed gradient magnitude. The
+ * difference decides whether windows are findable at all: summed magnitude is
+ * dominated by the few very strong contours — the building outline, the roof,
+ * a render's material boundary — and a window frame drawn at a tenth of that
+ * strength never clears a threshold expressed as a fraction of the maximum,
+ * however long it is. Counting edge pixels makes the criterion "is there a
+ * straight run here long enough to be an architectural line", which is
+ * scale-free and treats a faint long frame and a bright long contour alike.
+ *
+ * The floor is therefore a fraction of the facade's own extent rather than a
+ * fraction of the strongest line's score.
+ */
 function candidateLines(
   grad: Gradients,
+  edges: MaskImage,
   region: MaskImage,
   bounds: { x0: number; x1: number; y0: number; y1: number },
   maxRows: number,
   maxColumns: number,
+  minRunFraction: number,
 ): { rows: number[]; columns: number[] } {
   const w = grad.mag.width
   const rowScore = new Float64Array(grad.mag.height)
@@ -75,28 +97,32 @@ function candidateLines(
   for (let y = bounds.y0; y <= bounds.y1; y++) {
     for (let x = bounds.x0; x <= bounds.x1; x++) {
       const i = y * w + x
-      if (!region.data[i]) continue
-      // A horizontal line shows as a vertical gradient and vice versa.
-      rowScore[y] += Math.abs(grad.gy.data[i])
-      colScore[x] += Math.abs(grad.gx.data[i])
+      if (!region.data[i] || !edges.data[i]) continue
+      // A horizontal line shows as a vertical gradient and vice versa; the
+      // orientation test keeps a vertical frame out of the row histogram.
+      const gx = Math.abs(grad.gx.data[i])
+      const gy = Math.abs(grad.gy.data[i])
+      if (gy >= gx) rowScore[y]++
+      if (gx >= gy) colScore[x]++
     }
   }
-  const pick = (score: Float64Array, lo: number, hi: number, limit: number): number[] => {
+  const pick = (score: Float64Array, lo: number, hi: number, limit: number, extent: number): number[] => {
     const samples: { position: number; weight: number }[] = []
-    let max = 0
-    for (let i = lo; i <= hi; i++) if (score[i] > max) max = score[i]
-    if (max <= 0) return []
-    for (let i = lo; i <= hi; i++) if (score[i] >= max * 0.18) samples.push({ position: i, weight: score[i] })
-    const clusters = significantClusters(cluster1D(samples, 2), 0.12)
+    const floor = Math.max(4, extent * minRunFraction)
+    for (let i = lo; i <= hi; i++) if (score[i] >= floor) samples.push({ position: i, weight: score[i] })
+    if (samples.length === 0) return []
+    const clusters = significantClusters(cluster1D(samples, 2), 0.05)
     return clusters
       .sort((a, b) => b.weight - a.weight)
       .slice(0, limit)
       .map((c) => Math.round(c.position))
       .sort((a, b) => a - b)
   }
+  const facadeW = bounds.x1 - bounds.x0 + 1
+  const facadeH = bounds.y1 - bounds.y0 + 1
   return {
-    rows: pick(rowScore, bounds.y0, bounds.y1, maxRows),
-    columns: pick(colScore, bounds.x0, bounds.x1, maxColumns),
+    rows: pick(rowScore, bounds.y0, bounds.y1, maxRows, facadeW),
+    columns: pick(colScore, bounds.x0, bounds.x1, maxColumns, facadeH),
   }
 }
 
@@ -160,7 +186,7 @@ export function findOpeningRectangles(
   const facadeArea = facadeW * facadeH
   if (facadeArea <= 0) return []
 
-  const { rows, columns } = candidateLines(grad, region, bounds, opts.maxRows, opts.maxColumns)
+  const { rows, columns } = candidateLines(grad, edges, region, bounds, opts.maxRows, opts.maxColumns, opts.minRunFraction)
   if (rows.length < 2 || columns.length < 2) return []
 
   const candidates: OpeningRect[] = []

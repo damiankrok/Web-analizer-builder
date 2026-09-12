@@ -14,6 +14,7 @@ import type { BuildingHypothesis } from '../contracts/hypotheses.js'
 import { round } from '../math/vec.js'
 import { canonicalJson, hashObject } from '../util/hash.js'
 import { boundsOf, polygonArea } from '../contracts/geometry.js'
+import { groundFootprintArea } from '../scoring/multiview.js'
 import { REFERENCE_WEIGHT } from '../config/weights.js'
 
 const SCHEMA_VERSION = '1.0.0'
@@ -66,7 +67,7 @@ export function resolvedGeometry(h: BuildingHypothesis): unknown {
     },
     plinthY: h.plinthY,
     wallThicknessM: h.wallThicknessM,
-    footprintAreaM2: h.masses.reduce((s, m) => s + Math.abs(polygonArea(m.footprint.outer)), 0),
+    footprintAreaM2: groundFootprintArea(h),
     boundingBox: bounds,
     storeys: h.storeys,
     masses: h.masses.map((m) => ({

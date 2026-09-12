@@ -20,6 +20,9 @@ import type { ElevationAnalysis, ElevationOpening } from '../contracts/scaffold.
 import type { FacadeSide } from '../contracts/hypotheses.js'
 import type { AssetRole } from '../contracts/source.js'
 import { mkId } from '../util/ids.js'
+import type { Gradients } from '../raster/filters.js'
+import { cannyEdges } from '../raster/filters.js'
+import { findOpeningRectangles, DEFAULT_OPENING_DETECT } from './openings.js'
 import { cluster1D, significantClusters } from './cluster.js'
 import { conditionSilhouette, facadeSkyline, type ConditionedSilhouette } from './silhouette.js'
 
@@ -160,6 +163,7 @@ export function analyseElevation(
   role: AssetRole,
   image: RasterImage,
   gray: GrayImage,
+  gradients: Gradients,
   buildingMask: MaskImage,
   publishedHeightM: number | null,
 ): { analysis: ElevationAnalysis; measurement: ElevationMeasurement } | null {
@@ -215,20 +219,32 @@ export function analyseElevation(
     }
   }
 
-  // Openings between roughly 0.4 m² and a quarter of the facade.
-  const pxPerM2 = metresPerPixel > 0 ? 1 / (metresPerPixel * metresPerPixel) : 0
-  const minAreaPx = pxPerM2 > 0 ? Math.max(24, 0.4 * pxPerM2) : 24
-  const maxAreaPx = Math.max(minAreaPx * 4, sil.widthPx * sil.heightPx * 0.25)
-  const boxes = findDarkOpenings(gray, facadeMask, minAreaPx, maxAreaPx)
+  // Openings are read with the same framed-rectangle detector the feature
+  // solver uses. One physical window must produce one observation whatever
+  // consumes it: when the analysis and the solver ran different detectors the
+  // scorer compared the model against a weaker opening set than the model was
+  // built from, and reported "no openings" on facades where the solver had
+  // found several.
+  const denseAll = cannyEdges(gradients, 0.72, 0.88)
+  const dense = makeMask(gray.width, gray.height)
+  for (let i = 0; i < dense.data.length; i++) dense.data[i] = denseAll.data[i] && facadeMask.data[i] ? 1 : 0
+  const rects = findOpeningRectangles(
+    gray,
+    gradients,
+    dense,
+    facadeMask,
+    { x0: sil.minX, x1: sil.maxX, y0: sil.topRow, y1: sil.groundRow },
+    { ...DEFAULT_OPENING_DETECT, minBorderSupport: 0.45, maxRows: 22, maxColumns: 26 },
+  )
 
   const groundRow = sil.groundRow
-  const openings: ElevationOpening[] = boxes.map((b, i) => ({
-    id: mkId('elevop', assetId, i, b.minX, b.minY),
-    s: (b.minX - sil.minX) * metresPerPixel,
-    sillY: (groundRow - b.maxY) * metresPerPixel,
-    widthM: (b.maxX - b.minX + 1) * metresPerPixel,
-    heightM: (b.maxY - b.minY + 1) * metresPerPixel,
-    confidence: Math.min(0.85, 0.4 + b.rectangularity * 0.5),
+  const openings: ElevationOpening[] = rects.map((r, i) => ({
+    id: mkId('elevop', assetId, i, r.x0, r.y0),
+    s: (r.x0 - sil.minX) * metresPerPixel,
+    sillY: (groundRow - r.y1) * metresPerPixel,
+    widthM: (r.x1 - r.x0) * metresPerPixel,
+    heightM: (r.y1 - r.y0) * metresPerPixel,
+    confidence: Math.min(0.85, 0.35 + r.borderSupport * 0.5),
   }))
 
   // Horizontal bands: rows where the silhouette's own skyline steps, plus the

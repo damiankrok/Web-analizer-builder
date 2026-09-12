@@ -98,3 +98,28 @@ export const rectRing = (minX: number, minZ: number, maxX: number, maxZ: number)
 
 /** Ensure counter-clockwise winding in the PLAN frame (positive signed area). */
 export const ensureCCW = (ring: Vec2[]): Vec2[] => (polygonArea(ring) < 0 ? [...ring].reverse() : ring)
+
+/**
+ * Area covered by a set of axis-aligned rectangles, counting overlap once.
+ *
+ * Stacked masses share ground: a storey set back above the one below it is not
+ * extra footprint, and summing their areas would report a building half again
+ * larger than it is. Coordinate compression gives the union exactly for
+ * rectangles, which is what the footprint prior produces.
+ */
+export function rectUnionArea(rings: readonly (readonly Vec2[])[]): number {
+  const boxes = rings.map(boundsOf).filter((b) => b.maxX > b.minX && b.maxZ > b.minZ)
+  if (boxes.length === 0) return 0
+  const xs = [...new Set(boxes.flatMap((b) => [b.minX, b.maxX]))].sort((a, b) => a - b)
+  const zs = [...new Set(boxes.flatMap((b) => [b.minZ, b.maxZ]))].sort((a, b) => a - b)
+  let area = 0
+  for (let i = 0; i + 1 < xs.length; i++) {
+    for (let j = 0; j + 1 < zs.length; j++) {
+      const cx = (xs[i] + xs[i + 1]) / 2
+      const cz = (zs[j] + zs[j + 1]) / 2
+      const covered = boxes.some((b) => cx > b.minX && cx < b.maxX && cz > b.minZ && cz < b.maxZ)
+      if (covered) area += (xs[i + 1] - xs[i]) * (zs[j + 1] - zs[j])
+    }
+  }
+  return area
+}

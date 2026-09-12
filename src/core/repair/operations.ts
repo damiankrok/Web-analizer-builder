@@ -17,7 +17,7 @@ import type {
   OpeningGroupHypothesis,
   RoofHypothesis,
 } from '../contracts/hypotheses.js'
-import { boundsOf, polygonArea, rectRing } from '../contracts/geometry.js'
+import { boundsOf, rectRing, rectUnionArea } from '../contracts/geometry.js'
 
 export type RepairKind =
   | 'SPLIT_MASS'
@@ -34,6 +34,7 @@ export type RepairKind =
   | 'CHANGE_ROOM_ASSIGNMENT'
   | 'ADJUST_ANNEX_HEIGHT'
   | 'ADJUST_ROOF_OVERHANG'
+  | 'ADJUST_RECESS_DEPTH'
 
 export type RepairProposal = {
   id: string
@@ -119,6 +120,42 @@ export function adjustRoofOverhang(roofId: string, deltaM: number): RepairPropos
       next.roofs = next.roofs.map((r) =>
         r.id === roofId ? { ...r, overhangM: Math.max(0, r.overhangM + deltaM) } : r,
       )
+      return next
+    },
+  }
+}
+
+/**
+ * Move a set-back storey's facade plane, changing how deep the balcony is.
+ *
+ * This is the clearest case in the whole model of a dimension the orthographic
+ * sources cannot fix and a perspective view can. An elevation sees the recess
+ * edge-on and says nothing about its depth; the plan does not draw it, because
+ * it is a cut through the storey below. A render sees straight into it. §33
+ * lists exactly this — projection and recess depth — among the things a
+ * perspective view is entitled to decide.
+ */
+export function adjustRecessDepth(massId: string, facade: 'FRONT' | 'REAR' | 'LEFT' | 'RIGHT', deltaM: number): RepairProposal {
+  return {
+    id: `rep_recess_${massId}_${facade}_${deltaM.toFixed(2)}`,
+    kind: 'ADJUST_RECESS_DEPTH',
+    description: `change the ${facade} set-back of ${massId} by ${deltaM >= 0 ? '+' : ''}${deltaM.toFixed(2)} m`,
+    motivation: 'recess depth is invisible to the plan and edge-on in the elevations; the renders see into it',
+    apply: (h) => {
+      const next = clone(h, `recess_${facade}${deltaM >= 0 ? '+' : ''}${deltaM.toFixed(2)}`)
+      next.masses = next.masses.map((m) => {
+        if (m.id !== massId) return m
+        const b = boundsOf(m.footprint.outer)
+        const ring =
+          facade === 'FRONT'
+            ? rectRing(b.minX, b.minZ, b.maxX, b.maxZ - deltaM)
+            : facade === 'REAR'
+              ? rectRing(b.minX, b.minZ + deltaM, b.maxX, b.maxZ)
+              : facade === 'LEFT'
+                ? rectRing(b.minX + deltaM, b.minZ, b.maxX, b.maxZ)
+                : rectRing(b.minX, b.minZ, b.maxX - deltaM, b.maxZ)
+        return { ...m, footprint: { outer: ring, holes: [] } }
+      })
       return next
     },
   }
@@ -263,6 +300,8 @@ export function addOpeningGroup(group: OpeningGroupHypothesis): RepairProposal {
   }
 }
 
-/** Total footprint area of a hypothesis, for constraint checks. */
+/** Built area at ground level, counting stacked masses once. */
 export const footprintAreaOf = (h: BuildingHypothesis): number =>
-  h.masses.reduce((sum, m) => sum + Math.abs(polygonArea(m.footprint.outer)), 0)
+  rectUnionArea(
+    h.masses.filter((m) => m.baseY <= 0.25 && m.kind !== 'BALCONY_SLAB' && m.kind !== 'CANOPY').map((m) => m.footprint.outer),
+  )
