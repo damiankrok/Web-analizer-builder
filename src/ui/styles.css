@@ -52,3 +52,53 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .trace li.no b { color: var(--muted); }
 pre { background: #faf9f7; border: 1px solid var(--line); border-radius: 6px; padding: 10px; overflow: auto; font-size: 12px; }
 @media (max-width: 560px) { .row { flex-wrap: wrap; } .app { padding: 10px; } }
+
+/* --- source panel: URL entry and bundled-source chips ------------------- */
+
+.field {
+  display: block;
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.urlinput {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 10px 10px;
+  font: inherit;
+  font-size: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: inherit;
+}
+
+.row.wrap {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chip.on {
+  border-color: #2b6cb0;
+  background: rgba(43, 108, 176, 0.12);
+  font-weight: 600;
+}
+
+/* An unbundled URL is refused with a multi-line explanation, so the error box
+   has to keep its line breaks. */
+.error {
+  white-space: pre-wrap;
+}

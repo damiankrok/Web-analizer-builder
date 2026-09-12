@@ -23,3 +23,21 @@ declare module 'jsts/org/locationtech/jts/geom.js' {
   const anyExport: any
   export = anyExport
 }
+
+/**
+ * Vite's inline-worker import form. The standalone build needs the worker
+ * inlined as a blob so that starting it costs no extra request — a host that
+ * blocks scripted requests would otherwise stop it dead.
+ */
+declare module '*?worker&inline' {
+  const WorkerCtor: new () => Worker
+  export default WorkerCtor
+}
+
+/** Vite's build-time environment, narrowed to the flags this app reads. */
+interface ImportMetaEnv {
+  readonly VITE_STANDALONE?: string
+}
+interface ImportMeta {
+  readonly env: ImportMetaEnv
+}

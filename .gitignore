@@ -5,3 +5,6 @@ fixtures/*/assets/
 *.log
 .vite/
 dist-ui/
+dist-standalone/
+dist-standalone-src/
+src/web/bundled/

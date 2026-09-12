@@ -20,7 +20,7 @@ URL → SourcePackage → EvidenceGraph → metric scaffold → ProjectionClassi
 | `src/web/` | host adapter | Browser image decoding, worker entry. |
 | `src/ui/` | web only | React debug panels + Three.js viewer/debug renderer. |
 | `fixtures/` | data | Cached source pages for the A/B/C development projects. |
-| `scripts/` | tooling | Standard audit renders. |
+| `scripts/` | tooling | Standard audit renders, standalone build, browser verification. |
 | `docs/` | docs | Kotlin porting guide, export schemas, research report. |
 
 ## Development projects
@@ -34,16 +34,23 @@ URL → SourcePackage → EvidenceGraph → metric scaffold → ProjectionClassi
 
 ```
 npm run typecheck
-npm test                                 # 75 tests
+npm test                                 # 129 tests
 npm run fetch A                          # populate a project's asset cache (network)
 npm run analyze A                        # analyze one development project, write exports
 npm run bench                            # A + B benchmark summary
 npm run freeze                           # write the freeze hashes, then C may run
-npx tsx src/node/cli.ts holdout          # run D; refuses unless the freeze and HEAD still match
+npm run holdout                          # run D; refuses unless the freeze and HEAD still match
 npx tsx scripts/render-views.ts A out/views/A   # standard audit renders
-npm run ui:dev                           # debug UI (vite)
+npm run ui:dev                           # debug UI (vite), http://localhost:5173
 npm run ui:build                         # production UI bundle into dist-ui/
+npm run standalone:build                 # self-contained hostable build into dist-standalone/
+npm run standalone:serve                 # serve that build, http://localhost:4173
+npm run standalone:verify                # drive it in Chromium at phone size, 11 checks
 ```
+
+Owners and anyone testing the analyzer without reading the source should start
+from [`OWNER_WEB_TESTING.md`](OWNER_WEB_TESTING.md), which covers both the
+hosted preview and the local commands.
 
 Analysis runs offline from `fixtures/<project>/` by default; pass `--online` to
 fetch. Ten JSON documents are written per run into `out/<project>/`; see

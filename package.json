@@ -13,8 +13,13 @@
     "analyze": "tsx src/node/cli.ts analyze",
     "bench": "tsx src/node/cli.ts bench",
     "freeze": "tsx src/node/cli.ts freeze",
+    "holdout": "tsx src/node/cli.ts holdout",
     "ui:dev": "vite",
-    "ui:build": "vite build"
+    "ui:build": "vite build",
+    "standalone:bundle": "tsx scripts/build-standalone.ts",
+    "standalone:build": "npm run standalone:bundle && vite build --config vite.standalone.config.ts && node scripts/build-artifact-page.mjs",
+    "standalone:serve": "node scripts/serve-standalone.mjs",
+    "standalone:verify": "node scripts/verify-standalone.mjs"
   },
   "dependencies": {
     "jpeg-js": "^0.4.4",
@@ -31,6 +36,7 @@
     "@types/react-dom": "^18.3.1",
     "@types/three": "^0.169.0",
     "@vitejs/plugin-react": "^4.3.3",
+    "playwright": "^1.63.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",

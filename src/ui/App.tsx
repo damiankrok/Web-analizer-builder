@@ -6,6 +6,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Viewer, type ViewerEdge, type ViewerTri } from './Viewer.js'
+import { availableSources, runBundledAnalysis } from '../web/run-source.js'
+import { bundledFor } from '../web/bundled/index.js'
 
 type Progress = { stage: string; detail?: string }
 
@@ -76,6 +78,25 @@ type ResolvedGeometry = {
  * the same data: a panel that disagrees with the export would hide exactly the
  * kind of bug it exists to surface.
  */
+/**
+ * Where a source thumbnail lives.
+ *
+ * The dev server exposes the fetch cache under `/fixtures/<slug>/assets/` keyed
+ * by the cache hash; a standalone build publishes the same bytes beside the
+ * page under `assets/`, named by that same hash. One helper covers both so the
+ * asset grid does not need to know which host it is running in.
+ */
+const assetSrc = (sourceUrl: string, assetUrl: string): string => {
+  const basename = assetUrl.slice(assetUrl.lastIndexOf('/') + 1)
+  if (!STANDALONE) {
+    const slug = slugFor(sourceUrl.trim())
+    return slug ? `/fixtures/${slug}/assets/${basename}` : ''
+  }
+  const project = bundledFor(sourceUrl)
+  const asset = project?.assets.find((a) => a.basename === basename)
+  return asset ? `assets/${asset.file}` : ''
+}
+
 const EMPTY_GEOMETRY: ResolvedGeometry = { openingGroups: [], appearance: [] }
 const geometryOf = (result: Result): ResolvedGeometry =>
   (result.exports['resolved-building-geometry.json'] as ResolvedGeometry | undefined) ?? EMPTY_GEOMETRY
@@ -109,11 +130,28 @@ type ViewEntry = {
   notes: string[]
 }
 
-const PROJECTS = [
+/**
+ * Projects whose cached source package this build can reach.
+ *
+ * Under `npm run ui:dev` the packages are served out of `fixtures/`, so all
+ * four development projects are available. A standalone build carries its
+ * packages with it, and `availableSources()` reports what travelled.
+ */
+const DEV_PROJECTS = [
   { key: 'A', slug: 'A-marcowki', name: 'Dom w marcówkach (GE)', url: 'https://www.archon.pl/projekty-domow/projekt-dom-w-marcowkach-ge-m2fa281446a8ca' },
   { key: 'B', slug: 'B-bakopach', name: 'Dom w bakopach (G2E)', url: 'https://www.archon.pl/projekty-domow/projekt-dom-w-bakopach-g2e-mbb9288266b05e' },
-  { key: 'C', slug: 'C-holdout', name: 'Dom w kosaćcach 44 (holdout)', url: 'https://www.archon.pl/projekty-domow/projekt-dom-w-kosaccach-44-md3928530c6bf3' },
+  { key: 'C', slug: 'C-holdout', name: 'Dom w kosaćcach 44', url: 'https://www.archon.pl/projekty-domow/projekt-dom-w-kosaccach-44-md3928530c6bf3' },
+  { key: 'D', slug: 'D-holdout', name: 'Dom w kruszczykach 22 (holdout)', url: 'https://www.archon.pl/projekty-domow/projekt-dom-w-kruszczykach-22-md1827af5309ce' },
 ]
+
+/** True in the bundled build: the source package travels with the page. */
+const STANDALONE = import.meta.env.VITE_STANDALONE === '1'
+
+const SOURCES: Array<{ key: string; slug?: string; name: string; url: string }> = STANDALONE
+  ? availableSources().map((s) => ({ key: s.key, name: s.name, url: s.url }))
+  : DEV_PROJECTS
+
+const slugFor = (url: string): string | undefined => DEV_PROJECTS.find((p) => p.url === url)?.slug
 
 const PART_GROUPS: Array<{ label: string; parts: string[] }> = [
   { label: 'Roof', parts: ['ROOF', 'ROOF_SOFFIT'] },
@@ -124,7 +162,7 @@ const PART_GROUPS: Array<{ label: string; parts: string[] }> = [
 ]
 
 export function App(): JSX.Element {
-  const [project, setProject] = useState(PROJECTS[0])
+  const [url, setUrl] = useState(SOURCES[0]?.url ?? '')
   const [progress, setProgress] = useState<Progress | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<Result | null>(null)
@@ -132,28 +170,56 @@ export function App(): JSX.Element {
   const [repairCycles, setRepairCycles] = useState(2)
   const worker = useRef<Worker | null>(null)
 
+  const handle = useRef<{ cancel: () => void } | null>(null)
+
+  const receive = useCallback((m: { kind: string; stage?: string; detail?: string; message?: string; payload?: unknown }) => {
+    if (m.kind === 'PROGRESS') setProgress({ stage: m.stage ?? '', detail: m.detail })
+    else if (m.kind === 'ERROR') {
+      setError(m.message ?? 'unknown error')
+      setProgress(null)
+    } else if (m.kind === 'DONE') {
+      setResult(m.payload as Result)
+      setProgress(null)
+    }
+  }, [])
+
   const run = useCallback(() => {
     setError(null)
     setResult(null)
     setProgress({ stage: 'starting' })
     worker.current?.terminate()
+    handle.current?.cancel()
+
+    const target = url.trim()
+    const slug = slugFor(target)
+
+    if (STANDALONE || !slug) {
+      // Bundled path: the package travels with the build, and an unbundled URL
+      // is refused with the reason rather than met with a spinner.
+      runBundledAnalysis(target, repairCycles, receive)
+        .then((h) => {
+          handle.current = h
+        })
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : String(err))
+          setProgress(null)
+        })
+      return
+    }
+
     const w = new Worker(new URL('../web/analyze-worker.ts', import.meta.url), { type: 'module' })
     worker.current = w
-    w.onmessage = (e: MessageEvent) => {
-      const m = e.data
-      if (m.kind === 'PROGRESS') setProgress({ stage: m.stage, detail: m.detail })
-      else if (m.kind === 'ERROR') {
-        setError(m.message)
-        setProgress(null)
-      } else if (m.kind === 'DONE') {
-        setResult(m.payload as Result)
-        setProgress(null)
-      }
-    }
-    w.postMessage({ url: project.url, base: `/fixtures/${project.slug}`, maxRepairCycles: repairCycles })
-  }, [project, repairCycles])
+    w.onmessage = (e: MessageEvent) => receive(e.data)
+    w.postMessage({ url: target, base: `/fixtures/${slug}`, maxRepairCycles: repairCycles })
+  }, [url, repairCycles, receive])
 
-  useEffect(() => () => worker.current?.terminate(), [])
+  useEffect(
+    () => () => {
+      worker.current?.terminate()
+      handle.current?.cancel()
+    },
+    [],
+  )
 
   const hiddenParts = useMemo(() => {
     const out = new Set<string>()
@@ -186,14 +252,20 @@ export function App(): JSX.Element {
 
       <section className="panel">
         <h2>Source</h2>
+        <label className="field">
+          ARCHON project URL
+          <input
+            className="urlinput"
+            type="url"
+            inputMode="url"
+            autoComplete="off"
+            spellCheck={false}
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://www.archon.pl/projekty-domow/projekt-dom-…"
+          />
+        </label>
         <div className="row">
-          <select value={project.key} onChange={(e) => setProject(PROJECTS.find((p) => p.key === e.target.value) ?? PROJECTS[0])}>
-            {PROJECTS.map((p) => (
-              <option key={p.key} value={p.key}>
-                {p.key} — {p.name}
-              </option>
-            ))}
-          </select>
           <label className="inline">
             repair cycles
             <input type="number" min={0} max={4} value={repairCycles} onChange={(e) => setRepairCycles(Number(e.target.value))} />
@@ -202,7 +274,20 @@ export function App(): JSX.Element {
             {progress ? 'Analysing…' : 'Analyse'}
           </button>
         </div>
-        <div className="url">{project.url}</div>
+        <div className="row wrap">
+          {SOURCES.map((p) => (
+            <button key={p.key} className={`chip ${p.url === url.trim() ? 'on' : ''}`} onClick={() => setUrl(p.url)}>
+              {p.key} — {p.name}
+            </button>
+          ))}
+        </div>
+        <p className="small">
+          This build analyses a <strong>cached</strong> source package. A browser cannot fetch archon.pl
+          itself — the site sends no CORS headers, and the fetch policy (host allowlist, per-hop redirect
+          revalidation, size caps) is enforced by the Node adapter. Caching a new project is a CLI
+          step: <code>npm run fetch -- A --online</code>. Everything after that point is the same pipeline the
+          CLI runs.
+        </p>
         {progress && (
           <div className="progress">
             {progress.stage}
@@ -475,7 +560,7 @@ export function App(): JSX.Element {
             <div className="assets">
               {sourcePackage?.assets.map((a) => (
                 <figure key={a.id}>
-                  <img src={`/fixtures/${project.slug}/assets/${a.url.slice(a.url.lastIndexOf('/') + 1)}`} alt={a.role} loading="lazy" />
+                  <img src={assetSrc(url, a.url)} alt={a.role} loading="lazy" />
                   <figcaption>
                     {a.role}
                     <br />
