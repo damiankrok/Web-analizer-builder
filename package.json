@@ -1,0 +1,39 @@
+{
+  "name": "web-analyzer-camera-aware",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "RESEARCH-ANALYZER-WEB-01 — camera-aware multi-view web analyzer for ARCHON project pages",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "fetch": "tsx src/node/cli.ts fetch",
+    "analyze": "tsx src/node/cli.ts analyze",
+    "bench": "tsx src/node/cli.ts bench",
+    "freeze": "tsx src/node/cli.ts freeze",
+    "ui:dev": "vite",
+    "ui:build": "vite build"
+  },
+  "dependencies": {
+    "jpeg-js": "^0.4.4",
+    "jsts": "^2.12.1",
+    "omggif": "^1.0.10",
+    "pngjs": "^7.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/three": "^0.169.0",
+    "@vitejs/plugin-react": "^4.3.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.5"
+  }
+}
