@@ -47,6 +47,13 @@ export type OpeningObservation = {
   panelCount?: number
   /** Whether this observation shows the head cut by a roof plane. */
   clippedByRoof?: boolean
+  /**
+   * A kind the source itself established, where that is more than the size
+   * classifier can infer. Gable glazing is the case that matters: the infill
+   * detector knows it is gable glazing because its head is cut by the two roof
+   * planes, and no rule over width, height and sill can recover that.
+   */
+  kind?: OpeningKind
 }
 
 export type OpeningConflict = {
@@ -248,7 +255,9 @@ export function resolveOpening(
   // the structural opening, whichever is larger.
   const nestedMembers = group.filter((o) => o !== outer && nests(o, outer)).length
   const panelCount = Math.max(1, nestedMembers, ...group.map((o) => o.panelCount ?? 1))
-  const kind = classify(widthM, heightM, sillY, massKind)
+  // A kind the source established outranks one inferred from proportions.
+  const stated = byAuthority.find((o) => o.kind === 'GABLE_GLAZING')?.kind
+  const kind = stated ?? classify(widthM, heightM, sillY, massKind)
   // Mullions divide the structural opening evenly when a source counted panels
   // but none placed them: an even division is the drafting default and is
   // marked as inferred by carrying no separate provenance.

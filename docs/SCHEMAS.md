@@ -1,6 +1,6 @@
 # Export schemas
 
-Nine JSON documents are written per project run, all of them
+Ten JSON documents are written per project run, all of them
 `schemaVersion: "1.0.0"`. Every document is serialised through
 `canonicalJson` (sorted keys, numbers rounded to nine decimals), so two runs
 over the same assets produce byte-identical files. Lengths are metres, angles
@@ -24,7 +24,12 @@ What was fetched and what it was taken to be.
 | `facts[]` | `{key, label, rawText, value, unit, confidence}` | published scalar facts (`footprint_area`, `building_height`, `garage_area`, room counts …) |
 | `notes[]` | string | published technology notes (roof family, pitch, knee wall, wall build-up) |
 | `rooms[]` | `{storey, name, areaM2}` | published room table |
-| `assets[]` | `{id, url, role, roleConfidence, widthPx, heightPx, byteLength, mediaType}` | one entry per image |
+| `assets[]` | `{id, url, role, roleConfidence, width, height, byteLength, sha256, variants[]}` | one entry per *view*; `url` points at the largest published copy |
+
+`variants[]`: `{url, kind, width?, height?, nativeWidth?, nativeHeight?}` with
+`kind` ∈ `PAGE`, `LIGHTBOX`. ARCHON publishes each technical drawing twice and
+the page embeds the smaller copy; both are recorded so the resolution audit can
+state what was available as well as what was used.
 
 `role` is one of `ELEVATION_FRONT/REAR/LEFT/RIGHT`, `SECTION`,
 `PLAN_GROUND/PLAN_UPPER/PLAN_OTHER`, `SITE_PLAN`, `HERO_RENDER`,
@@ -94,9 +99,9 @@ The answer. A real building, not an extruded outline.
 | `masses[]` | `{id, kind, footprint:{outer[], holes[]}, baseY, topY, areaM2, authority, confidence}` | volumetric masses |
 | `storeys[]` | `{id, massId, levelY, heightM}` | |
 | `roofs[]` | `{id, massId, kind, pitchDeg, eaveY, ridgeY, ridgeDir?, overhangM, authority, confidence}` | |
-| `openingGroups[]` | `{id, massId, facade, kind, s, sillY, widthM, heightM, count, authority, confidence}` | |
+| `openingGroups[]` | `{id, massId, facade, kind, memberIds[], s, sillY, widthM, heightM, panelCount, clippedByRoof, authority, confidence}` | the *structural* opening; `memberIds` names the observations it was resolved from and `panelCount` its subdivision |
 | `openings[]` | `{id, groupId, facade, s, sillY, widthM, heightM}` | the cuts actually made in the walls |
-| `appearance[]` | `{id, kind, facade?, world?, s?, t?, widthM, heightM, authority, confidence}` | `CHIMNEY`, `BAND`, `RAILING`, `PORTAL` |
+| `appearance[]` | `{id, kind, facade?, world?, s?, t?, widthM, heightM, authority, confidence}` | `CHIMNEY`, `BAND`, `RAILING`, `PORTAL`, `PIER`, `PLINTH`, `ROOFLIGHT` |
 | `constraints[]` | `{id, key, description, target, toleranceAbs}` | hard metric constraints carried with the geometry |
 | `notes[]` | string | how each element was arrived at |
 
@@ -151,7 +156,32 @@ Where every number came from (addendum 3).
 `closes` when its parts sum to its own overall dimension.
 `callouts[]`: `{text, valueM, verified, x, y}`.
 
-## 9. `benchmark-summary.json`
+## 9. `printed-dimensions.json`
+
+What the drawings say in print, and what was made of it (WEB-02 §3, §4, §14).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `resolution[]` | `{assetId, role, pagePx, analysedPx, variant, upgraded, usedForText}` | which published copy of each asset supplied the pixels; `upgraded` means a larger original replaced the page copy |
+| `alphabet` | string | characters the drawings taught the recogniser, e.g. `"0123456789"` |
+| `harvested` | `{positions, labels}` | glyph positions labelled with certainty, and the labels they came from |
+| `scales[]` | `{assetId, role, pixelsPerMetre}` | source-native scale each drawing was finally read at |
+| `dimensions[]` | see below | every token read |
+| `accepted` | number | how many survived the geometry check |
+| `notes[]` | string | the stage's own account of what happened |
+
+Each dimension: `{id, assetId, role, kind, text, metres, fidelity, lengthPx,
+box, confidence, note}` where `kind` ∈ `CHAIN_SEGMENT`, `LEVEL`, and `fidelity`
+is one of the seven classes below. `note` always says why the reading was or was
+not accepted.
+
+`fidelity` ∈ `SOURCE_EXACT`, `SOURCE_CORROBORATED`, `SOURCE_DERIVED`,
+`GEOMETRIC_INFERRED`, `VISUAL_INFERRED`, `ASSUMED`, `UNRESOLVED`. Only the first
+two may act as exact or hard metric constraints. A token that was read but
+disagrees with the geometry it annotates is exported as `UNRESOLVED` with the
+disagreement stated — it is evidence about the recogniser, not a dimension.
+
+## 10. `benchmark-summary.json`
 
 `{project, name, schemaVersion, assetCount, analysedCount, scores, performance,
 freeze}` where `performance` is `{assetAnalysisMs, scaffoldMs, cameraFitMs,

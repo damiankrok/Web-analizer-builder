@@ -397,6 +397,7 @@ export function buildHypothesis(inputs: BuilderInputs): BuildingHypothesis {
     confidence: g.confidence,
     panelCount: g.panelCount,
     clippedByRoof: g.clippedByRoof,
+    kind: g.kind,
   }))
   const identity = resolveOpenings(observations, (facade, s) => {
     const frame = facadeFrame(facade, bounds)

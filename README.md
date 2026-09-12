@@ -27,7 +27,8 @@ URL → SourcePackage → EvidenceGraph → metric scaffold → ProjectionClassi
 
 - **A — Dom w marcówkach (GE)** — primary. Ground storey + usable attic, 40° gable, flat-roof garage wing.
 - **B — Dom w bakopach (G2E)** — continuous regression. Single storey, 35° gable, double garage, no knee wall.
-- **C — Dom w kosaćcach 44** — holdout. Not run until weights and thresholds are frozen.
+- **C — Dom w kosaćcach 44** — the WEB-01 holdout, run once after that freeze. Observed, so no longer clean; kept as a second regression project.
+- **D — Dom w kruszczykach 22** — the WEB-02 holdout. Single storey, hipped roof, no attic, no wing. Chosen before development on the presence of technical drawings alone; not run until the freeze.
 
 ## Commands
 
@@ -38,15 +39,21 @@ npm run fetch A                          # populate a project's asset cache (net
 npm run analyze A                        # analyze one development project, write exports
 npm run bench                            # A + B benchmark summary
 npm run freeze                           # write the freeze hashes, then C may run
-npx tsx src/node/cli.ts holdout          # run C; refuses unless the freeze still matches
+npx tsx src/node/cli.ts holdout          # run D; refuses unless the freeze and HEAD still match
 npx tsx scripts/render-views.ts A out/views/A   # standard audit renders
 npm run ui:dev                           # debug UI (vite)
 npm run ui:build                         # production UI bundle into dist-ui/
 ```
 
 Analysis runs offline from `fixtures/<project>/` by default; pass `--online` to
-fetch. Nine JSON documents are written per run into `out/<project>/`; see
+fetch. Ten JSON documents are written per run into `out/<project>/`; see
 `docs/SCHEMAS.md`.
+
+Printed dimensions are read from **source-native** rasters, not from the bounded
+640 px structural frame: the page embeds small copies of the technical drawings
+and links the originals, and an 11-pixel digit does not survive being resampled
+to 8. `printed-dimensions.json` records which copy of each asset supplied the
+pixels.
 
 ## Design rules the code enforces
 
@@ -60,6 +67,12 @@ fetch. Nine JSON documents are written per run into `out/<project>/`; see
   never a scoring input, geometry seed or PASS/FAIL source (§39).
 - Exact source dimensions are never silently averaged; conflicts are retained
   and every metric item carries its provenance.
+- A printed number is a dimension only once the analyzer knows what it measures:
+  a reading is accepted only where it also agrees with the geometry it
+  annotates, and a reading that does not is exported with the disagreement
+  stated rather than used.
+- Only `SOURCE_EXACT` and `SOURCE_CORROBORATED` may act as exact or hard metric
+  constraints.
 - Fetching is policy-bounded: HTTPS only, host allowlist, per-hop redirect
   revalidation, size caps, bounded concurrency. Not an open proxy.
 
@@ -68,4 +81,7 @@ fetch. Nine JSON documents are written per run into `out/<project>/`; see
 - `docs/WEB_ANALYZER_CAMERA_AWARE_RESEARCH_REPORT.md` — the research write-up,
   including the final visual acceptance audit and the 3D/photo-driven section.
 - `docs/KOTLIN_PORTING_GUIDE.md` — per-module port verdicts and port order.
-- `docs/SCHEMAS.md` — the nine export documents.
+- `docs/WEB_ANALYZER_DIMENSION_OCR_HARDENING_REPORT.md` — the WEB-02 write-up:
+  source resolutions, the dimension pipeline, what was recovered and what the
+  holdout exposed.
+- `docs/SCHEMAS.md` — the ten export documents.

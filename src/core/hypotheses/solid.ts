@@ -463,10 +463,16 @@ export function buildSolidModel(h: BuildingHypothesis, opts?: Partial<SolidOptio
       const edgeLen = Math.hypot(pB.x - pA.x, pB.z - pA.z)
       if (edgeLen < 0.05) continue
 
-      // Skip the gable ends of a pitched mass: they are built as gable walls,
-      // which rise to the ridge rather than stopping at the eave.
-      const alongZ = pitched ? (roof.ridgeDir?.z ?? 1) !== 0 : false
-      const isGableEnd = pitched && ((alongZ && (side === 'FRONT' || side === 'REAR')) || (!alongZ && (side === 'LEFT' || side === 'RIGHT')))
+      // A gable end has two parts: the rectangle from the mass's base up to
+      // the eave, and the triangle from the eave to the ridge. This loop builds
+      // every wall to `wallTop`, which for a pitched mass *is* the eave, and
+      // `buildGableWalls` adds the triangle above it.
+      //
+      // Skipping the gable ends here — on the assumption that the gable builder
+      // covered them — left the rectangle unbuilt and nobody's job. On a house
+      // whose pitched roof sits on a second, upper mass the missing piece is a
+      // knee-wall band and easy to miss; on a single-mass gabled house it is
+      // the whole front and rear wall, which is how the holdout found it.
 
       const wallOpenings: WallOpening[] = []
       for (const g of massGroups) {
@@ -493,7 +499,6 @@ export function buildSolidModel(h: BuildingHypothesis, opts?: Partial<SolidOptio
         wallOpenings.push({ group: g, f0: clipped0, f1: clipped1, t0: Math.max(mass.baseY + 0.02, g.sillY), t1: top })
       }
 
-      if (isGableEnd) continue
       buildWall(pA, pB, qA, qB, mass.baseY, wallTop, wallOpenings, mass.id, mass.id, mass.storeyIds[0], model)
     }
 

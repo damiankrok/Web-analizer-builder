@@ -103,6 +103,34 @@ targetY, rollDeg}` about a known building centre. If you do port to OpenCV:
 | `anchorMatches` | `objectPoints`/`imagePoints` | The anchor correspondences are exactly a PnP problem when ≥ 6 are matched — useful as a *seed*, but the FOV–distance ambiguity remains and `ambiguity.ts` must still run. |
 | `focalFromVanishingPair` | `calibrationMatrixValues` | Focal from an orthogonal vanishing-point pair, used when the render gives no metadata. |
 
+### Printed dimensions (WEB-02)
+
+| Module | Verdict | Notes |
+| --- | --- | --- |
+| `core/dimensions/contracts.ts` | `PORT_DIRECT` | Types only. `MetricFidelity` and `FIDELITY_RANK` decide which readings may act as hard constraints; keep `isExactFidelity` as the single gate. |
+| `core/dimensions/geometry.ts` | `PORT_DIRECT` | Lines, ticks, chain families, callout rings, leader tracing, level bands, slant. A tick must ink *both* sides of the baseline — that one test is what keeps a digit's stem from being read as an anchor. `refineLinePosition` and the tick centroids must stay `Double`: the sub-pixel fraction they recover is the point. |
+| `core/dimensions/crops.ts` | `PORT_DIRECT` | Source-native crops, upright rotation, contrast normalisation, rule removal, deterministic threshold variants. |
+| `core/dimensions/recognizer.ts` | `PORT_DIRECT` | The seam, glyph segmentation, bilinear normalisation with the slant removed. Nearest-neighbour sampling aliases the stroke edge by half a pixel and makes two instances of one character disagree more than two different characters do. |
+| `core/dimensions/templates.ts` | `PORT_DIRECT` | Harvested templates, the labelling-coherence objective, invariant-position harvesting. |
+| `core/dimensions/alphabet.ts` | `PORT_DIRECT` | The earlier clustering path, kept for the propagation helpers. |
+| `core/dimensions/grammar.ts` | `PORT_DIRECT` | Alternative unit interpretations with plausibility by kind. Must not choose; only the geometry chooses. |
+| `core/dimensions/chains.ts` | `PORT_DIRECT` | Joint scale/integer solving, closure, scale voting with the aliasing guard. |
+| `core/dimensions/section-levels.ts` | `PORT_DIRECT` | Level markers found structurally and placed on the reference line they annotate. |
+| `core/dimensions/text-runs.ts` | `PORT_DIRECT` | General run finder; baseline agreement is measured against the run's *first* member, or the baseline drifts a pixel per character. |
+| `core/dimensions/room-anchor.ts` | `PORT_DIRECT` | Published-room-area anchoring. Present, not wired: see the WEB-02 report §14. |
+| `core/dimensions/reader.ts`, `project.ts`, `stage.ts` | `PORT_DIRECT` | Per-drawing and per-package orchestration. The section supervises the package; the plans are read, not predicted. |
+| `core/openings/identity.ts` | `PORT_DIRECT` | Cross-source opening identity, panel structure from nesting, retained conflicts. |
+| `core/roof/rooflights.ts` | `PORT_DIRECT` | Two-sided contrast, the four rejections, single-view placement on the slope. |
+| `core/source/resolution.ts` | `PORT_DIRECT` | The upgrade *policy* — candidates and the strictly-larger test. |
+| `node/source-loader.ts` (probe) | `PORT_WITH_ADAPTER` | The probe is a new network path and must go through the same fetch-policy checks as every other request. |
+
+**If an OCR library is ever added** it sits behind
+`TechnicalTextRecognizer`, is marked `REPLACE_ON_ANDROID`, and stays subject to
+the geometry check: a reading that does not match the thing it annotates is not
+a dimension, whatever produced it. On Android the equivalent is ML Kit's text
+recogniser, and it needs exactly that treatment — its output must never become
+exact metric truth.
+
 ### Metric scaffold
 
 | Module | Verdict | Notes |
