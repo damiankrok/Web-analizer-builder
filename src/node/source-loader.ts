@@ -79,7 +79,7 @@ export async function loadSource(url: string, opts: LoadOptions): Promise<Loaded
       sha256: r.sha,
     }
     if (next.role === 'UNKNOWN_ASSET') {
-      const guess = classifyByPixels(toGray(r.image))
+      const guess = classifyByPixels(r.image, toGray(r.image))
       next = {
         ...next,
         role: guess.role,

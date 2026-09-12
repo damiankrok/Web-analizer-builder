@@ -1,6 +1,7 @@
 /** Minimal ambient types for untyped decoder libraries used by the Node adapter. */
 declare module 'pngjs' {
   export class PNG {
+    constructor(options?: { width?: number; height?: number })
     width: number
     height: number
     data: Buffer

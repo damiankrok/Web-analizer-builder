@@ -13,6 +13,7 @@ export type AssetRole =
   | 'GARDEN_RENDER'
   | 'SIDE_RENDER'
   | 'OTHER_RENDER'
+  | 'INTERIOR_RENDER'
   | 'SITE_PLAN'
   | 'UNKNOWN_ASSET'
 
@@ -23,11 +24,20 @@ export const ELEVATION_ROLES: readonly AssetRole[] = [
   'ELEVATION_LEFT',
   'ELEVATION_RIGHT',
 ]
+/** Exterior renders: the only renders that carry massing evidence. */
 export const RENDER_ROLES: readonly AssetRole[] = [
   'HERO_RENDER',
   'GARDEN_RENDER',
   'SIDE_RENDER',
   'OTHER_RENDER',
+]
+
+/** Roles that describe the building's exterior geometry in any way. */
+export const GEOMETRY_ROLES: readonly AssetRole[] = [
+  ...PLAN_ROLES,
+  'SECTION',
+  ...ELEVATION_ROLES,
+  ...RENDER_ROLES,
 ]
 
 /** How the role was decided — metadata first, pixels second (§9). */

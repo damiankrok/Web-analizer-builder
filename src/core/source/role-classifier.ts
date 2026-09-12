@@ -3,7 +3,7 @@
  * second — the pixel path only runs for assets metadata could not place.
  */
 import type { AssetRole, RoleEvidence } from '../contracts/source.js'
-import type { GrayImage } from '../contracts/raster.js'
+import type { GrayImage, RasterImage } from '../contracts/raster.js'
 
 export type RoleGuess = { role: AssetRole; confidence: number; evidence: RoleEvidence[] }
 
@@ -112,30 +112,62 @@ export function classifyByMetadata(input: {
 }
 
 /**
- * Pixel fallback (§9 "pixel inference second"). Technical drawings are
- * overwhelmingly near-white with thin dark ink; renders carry broad mid-tone
- * colour. Cheap, and only consulted when metadata failed.
+ * Pixel fallback (§9 "pixel inference second"), consulted only for assets that
+ * metadata could not place.
+ *
+ * Its main job on real pages is separating exterior from interior renders. A
+ * project page publishes a gallery of both, and an interior view carries no
+ * massing evidence at all — feeding one to camera fitting against an exterior
+ * building hypothesis is not a hard case, it is a category error. The signal is
+ * reliable: an exterior view has sky or vegetation around the building, an
+ * interior has neither.
  */
-export function classifyByPixels(g: GrayImage): RoleGuess {
+export function classifyByPixels(img: RasterImage, gray: GrayImage): RoleGuess {
+  const n = gray.data.length
   let white = 0
   let dark = 0
   let mid = 0
-  const n = g.data.length
   for (let i = 0; i < n; i++) {
-    const v = g.data[i]
+    const v = gray.data[i]
     if (v > 235) white++
     else if (v < 80) dark++
     else mid++
   }
   const whiteFrac = white / n
   const midFrac = mid / n
+
   if (whiteFrac > 0.6 && midFrac < 0.3) {
-    // Drawing-like. Aspect ratio separates a tall section from a wide elevation.
-    const aspect = g.width / g.height
+    // Drawing-like: mostly paper. Aspect ratio separates a wide elevation from
+    // a squarer plan, but neither is confident enough to outrank metadata.
+    const aspect = gray.width / gray.height
     if (aspect > 2.0) return { role: 'ELEVATION_FRONT', confidence: 0.3, evidence: ['PIXEL_INFERENCE'] }
     return { role: 'PLAN_OTHER', confidence: 0.3, evidence: ['PIXEL_INFERENCE'] }
   }
-  return { role: 'OTHER_RENDER', confidence: 0.35, evidence: ['PIXEL_INFERENCE'] }
+
+  const outdoor = outdoorFraction(img)
+  if (outdoor < 0.06) {
+    return { role: 'INTERIOR_RENDER', confidence: 0.75, evidence: ['PIXEL_INFERENCE'] }
+  }
+  return { role: 'OTHER_RENDER', confidence: 0.45, evidence: ['PIXEL_INFERENCE'] }
+}
+
+/**
+ * Fraction of the frame that reads as sky or vegetation. Deliberately cheap and
+ * threshold-based: this decides only whether an image is outdoors, and the
+ * expensive flood-based background model runs later on the images that matter.
+ */
+export function outdoorFraction(img: RasterImage): number {
+  const n = img.width * img.height
+  let outdoor = 0
+  for (let i = 0; i < n; i++) {
+    const r = img.data[i * 4]
+    const g = img.data[i * 4 + 1]
+    const b = img.data[i * 4 + 2]
+    const isSky = b > 110 && b - r > 14 && b >= g
+    const isVeg = g > r + 10 && g > b + 8 && g > 40
+    if (isSky || isVeg) outdoor++
+  }
+  return outdoor / n
 }
 
 /**
