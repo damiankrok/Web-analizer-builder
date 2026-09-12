@@ -49,6 +49,7 @@ export type ExportBundle = {
   'repair-trace.json': unknown
   'benchmark-summary.json': unknown
   'metric-audit.json': unknown
+  'printed-dimensions.json': unknown
 }
 
 /**
@@ -222,6 +223,17 @@ export function buildExports(result: AnalyzeResult): ExportBundle {
     })),
   }
 
+  const printedDimensions = {
+    schemaVersion: SCHEMA_VERSION,
+    resolution: result.printed.resolution,
+    alphabet: result.printed.alphabet,
+    harvested: { positions: result.printed.harvestedPositions, labels: result.printed.harvestedLabels },
+    scales: result.printed.scales,
+    dimensions: result.printed.dimensions,
+    accepted: result.printed.dimensions.filter((d) => d.fidelity === 'SOURCE_CORROBORATED').length,
+    notes: result.printed.notes,
+  }
+
   return clean({
     'source-package.json': sourcePackage,
     'evidence-graph.json': result.graph.toJSON(),
@@ -232,6 +244,7 @@ export function buildExports(result: AnalyzeResult): ExportBundle {
     'repair-trace.json': repairTrace,
     'benchmark-summary.json': benchmarkSummary,
     'metric-audit.json': metricAudit,
+    'printed-dimensions.json': printedDimensions,
   })
 }
 
@@ -245,6 +258,7 @@ export const NON_DETERMINISTIC_KEYS: ReadonlySet<string> = new Set([
   'scaffoldMs',
   'cameraFitMs',
   'repairMs',
+  'printedMs',
   'elapsedMs',
   'fetchedAt',
   'frozenAt',

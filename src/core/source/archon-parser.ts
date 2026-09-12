@@ -8,6 +8,7 @@
  * is a plain <img> under assets.archon.pl with a descriptive filename slug.
  */
 import type {
+  AssetVariant,
   PublishedFact,
   RoomFact,
   SourceAsset,
@@ -210,11 +211,55 @@ export function extractRooms(html: string): RoomFact[] {
  * the plain plan in `src` and the dimensioned "with areas" variant in the data
  * attribute, and the latter is the one worth analysing.
  */
+/**
+ * Lightbox originals, keyed by the page image they wrap.
+ *
+ * The markup is `<a href="{original}" class="fancybox3 ..."> <img src="{page
+ * copy}"> </a>`, so containment — not the filename — says which two URLs are
+ * the same view. That matters because the original's filename carries no view
+ * name at all (`projekt-dom-w-marcowkach-ge-<hash>__11264.jpg`): matched by
+ * name it would be classified as an unrelated render, which is exactly how a
+ * 1280 px elevation goes unused while a 550 px copy is analysed (§4).
+ */
+export function extractLightboxOriginals(html: string, projectCode: string): Map<string, string> {
+  const out = new Map<string, string>()
+  const productPath = `/images/products/${projectCode}/`
+  // Anchor open tag, then everything up to the closing anchor.
+  const anchorRe = /<a\b([^>]*)>([\s\S]{0,3000}?)<\/a>/gi
+  let m: RegExpExecArray | null
+  while ((m = anchorRe.exec(html))) {
+    const attrs = parseAttrs(`<a ${m[1]}>`)
+    const href = attrs.href ?? ''
+    if (!href.includes(productPath)) continue
+    if (!/\.(jpe?g|png|gif)(\?|$)/i.test(href)) continue
+    const inner = m[2]
+    for (const img of inner.matchAll(/<img\b[^>]*>/gi)) {
+      const ia = parseAttrs(img[0])
+      for (const cand of [ia.src, ia['data-floor-pom-img']]) {
+        if (!cand || !cand.includes(productPath)) continue
+        const page = cand.split('&')[0]
+        const full = absolutise(href.split('&')[0], page)
+        if (page !== full) out.set(page, full)
+      }
+    }
+  }
+  return out
+}
+
+/** Resolve a possibly root-relative asset href against a sibling absolute URL. */
+function absolutise(href: string, sibling: string): string {
+  if (/^https?:\/\//i.test(href)) return href
+  const origin = sibling.match(/^https?:\/\/[^/]+/)
+  return origin ? origin[0] + (href.startsWith('/') ? href : `/${href}`) : href
+}
+
 export function extractAssets(html: string, projectCode: string): SourceAsset[] {
   const byUrl = new Map<string, SourceAsset>()
   const imgRe = /<img\b[^>]*>/gi
   let m: RegExpExecArray | null
   const productPath = `/images/products/${projectCode}/`
+  const originals = extractLightboxOriginals(html, projectCode)
+  const originalUrls = new Set(originals.values())
 
   const consider = (url: string, alt: string, modalLink: string | undefined, hintW?: string, hintH?: string): void => {
     if (!url || !url.includes(productPath)) return
@@ -225,15 +270,28 @@ export function extractAssets(html: string, projectCode: string): SourceAsset[] 
     const guess = classifyByMetadata({ urlSlug: slug, alt, modalLink })
     const w = hintW && /^\d+$/.test(hintW) ? Number(hintW) : undefined
     const h = hintH && /^\d+$/.test(hintH) ? Number(hintH) : undefined
+    // The page copy names the view; the lightbox original carries its pixels.
+    // The asset keeps the page copy's identity and classification and points
+    // its `url` at the original, so nothing downstream has to know there were
+    // two files.
+    const original = originals.get(clean)
+    const variants: AssetVariant[] = original
+      ? [
+          { url: original, kind: 'LIGHTBOX' },
+          { url: clean, kind: 'PAGE', ...(w ? { width: w } : {}), ...(h ? { height: h } : {}) },
+        ]
+      : [{ url: clean, kind: 'PAGE', ...(w ? { width: w } : {}), ...(h ? { height: h } : {}) }]
     byUrl.set(clean, {
       id: mkId('asset', clean),
-      url: clean,
+      url: original ?? clean,
       role: guess.role,
       roleConfidence: guess.confidence,
       roleEvidence: guess.evidence,
       label: alt || slug,
-      ...(w ? { width: w } : {}),
-      ...(h ? { height: h } : {}),
+      // A width/height attribute describes the page copy, so it is only a
+      // hint about the asset when no larger original replaced it.
+      ...(original ? {} : { ...(w ? { width: w } : {}), ...(h ? { height: h } : {}) }),
+      variants,
     })
   }
 
@@ -244,6 +302,9 @@ export function extractAssets(html: string, projectCode: string): SourceAsset[] 
     // The dimensioned plan variant lives only in this data attribute.
     consider(attrs['data-floor-pom-img'] ?? '', attrs.alt ?? '', modal)
   }
+  // Drop any original that also appeared as a standalone <img>: it is already
+  // represented by the asset that wraps it.
+  for (const url of originalUrls) if (byUrl.has(url) && [...originals.keys()].some((k) => byUrl.has(k))) byUrl.delete(url)
   // og:image carries the full-resolution hero render.
   for (const tag of html.matchAll(/<meta[^>]*property="og:image"[^>]*>/gi)) {
     const attrs = parseAttrs(tag[0])

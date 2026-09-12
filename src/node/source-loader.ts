@@ -13,6 +13,7 @@ import { parseArchonPage } from '../core/source/archon-parser.js'
 import { classifyByPixels } from '../core/source/role-classifier.js'
 import { toGray } from '../core/raster/gray.js'
 import { ARCHON_POLICY } from '../core/source/fetch-policy.js'
+import { resolutionCandidates, isResolutionUpgrade } from '../core/source/resolution.js'
 import { fetchWithCache, mapConcurrent } from './fetch-adapter.js'
 import { decodeImage } from './image-decode.js'
 
@@ -50,8 +51,36 @@ export async function loadSource(url: string, opts: LoadOptions): Promise<Loaded
   const results = await mapConcurrent(wanted, ARCHON_POLICY.concurrency, async (asset) => {
     try {
       const res = await fetchWithCache(asset.url, 'image', opts.cacheDir)
-      const image = decodeImage(res.bytes)
-      return { asset, image, sha: res.sha256, bytes: res.bytes.byteLength, error: null as string | null }
+      let image = decodeImage(res.bytes)
+      let url = asset.url
+      let sha = res.sha256
+      let bytes = res.bytes.byteLength
+      let variants = asset.variants ?? [{ url: asset.url, kind: 'PAGE' as const }]
+      // Probe the conventional original where the page exposed no anchor for
+      // it. Verified, not assumed: kept only if it decodes to strictly more
+      // pixels (§4). Offline runs simply skip the probe.
+      if (!opts.offline && !variants.some((v) => v.kind === 'LIGHTBOX')) {
+        for (const candidate of resolutionCandidates(asset.url)) {
+          try {
+            const alt = await fetchWithCache(candidate, 'image', opts.cacheDir)
+            const decoded = decodeImage(alt.bytes)
+            if (!isResolutionUpgrade(decoded, image)) continue
+            variants = [
+              { url: candidate, kind: 'LIGHTBOX', nativeWidth: decoded.width, nativeHeight: decoded.height },
+              { ...variants[0], nativeWidth: image.width, nativeHeight: image.height },
+            ]
+            image = decoded
+            url = candidate
+            sha = alt.sha256
+            bytes = alt.bytes.byteLength
+            break
+          } catch {
+            // A 404 or an undecodable body means the convention does not hold
+            // for this asset. Nothing to record; the page copy stands.
+          }
+        }
+      }
+      return { asset: { ...asset, url, variants }, image, sha, bytes, error: null as string | null }
     } catch (err) {
       return {
         asset,
@@ -71,12 +100,16 @@ export async function loadSource(url: string, opts: LoadOptions): Promise<Loaded
       continue
     }
     images.set(r.asset.id, r.image)
+    const variants = (r.asset.variants ?? []).map((v) =>
+      v.url === r.asset.url ? { ...v, nativeWidth: r.image.width, nativeHeight: r.image.height } : v,
+    )
     let next: SourceAsset = {
       ...r.asset,
       width: r.image.width,
       height: r.image.height,
       byteLength: r.bytes,
       sha256: r.sha,
+      ...(variants.length > 0 ? { variants } : {}),
     }
     if (next.role === 'UNKNOWN_ASSET') {
       const guess = classifyByPixels(r.image, toGray(r.image))

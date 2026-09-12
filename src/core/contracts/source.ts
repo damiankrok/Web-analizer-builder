@@ -43,6 +43,26 @@ export const GEOMETRY_ROLES: readonly AssetRole[] = [
 /** How the role was decided — metadata first, pixels second (§9). */
 export type RoleEvidence = 'FILENAME' | 'ALT_TEXT' | 'CAPTION' | 'DOM_CONTEXT' | 'PIXEL_INFERENCE' | 'DEFAULT'
 
+/**
+ * One published resolution of a view.
+ *
+ * ARCHON serves technical drawings twice: a page thumbnail inside an `<img>`
+ * and a lightbox original behind the anchor that wraps it. The thumbnail is
+ * what the descriptive filename is attached to; the original is 2.3x larger
+ * linearly and is the only copy on which printed dimensions are legible. They
+ * are the same view and must stay one asset (§4).
+ */
+export type AssetVariant = {
+  url: string
+  kind: 'PAGE' | 'LIGHTBOX'
+  /** Published width/height attributes, when the markup states them. */
+  width?: number
+  height?: number
+  /** Decoded pixel size, once fetched. */
+  nativeWidth?: number
+  nativeHeight?: number
+}
+
 export type SourceAsset = {
   id: string
   url: string
@@ -58,6 +78,12 @@ export type SourceAsset = {
   contentType?: string
   /** SHA-256 of the asset bytes; makes runs reproducible and cacheable. */
   sha256?: string
+  /**
+   * Every published resolution of this view, largest first. `url` is the one
+   * actually analysed. Kept so the resolution audit can state what was
+   * available as well as what was used.
+   */
+  variants?: AssetVariant[]
 }
 
 export type FactUnit = 'm' | 'm2' | 'm3' | 'deg' | 'cm' | 'count' | 'text'

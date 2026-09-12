@@ -25,6 +25,7 @@ import { gableSpanFromSection } from '../scaffold/section.js'
 import { buildHypothesis } from '../hypotheses/builder.js'
 import { tessellate, worldBounds, type Tessellation } from '../hypotheses/tessellate.js'
 import { facadeOf } from '../scaffold/elevation.js'
+import { readSourceDimensions } from '../dimensions/stage.js'
 import { scoreElevation } from '../scoring/elevation.js'
 import { scoreView } from '../scoring/view.js'
 import { hypothesisBounds, scoreMultiView } from '../scoring/multiview.js'
@@ -50,6 +51,8 @@ export const DEFAULT_ANALYZE: AnalyzeOptions = {
 export type PerformanceRecord = {
   totalMs: number
   assetAnalysisMs: number
+  /** Time spent reading printed dimensions at source-native resolution. */
+  printedMs: number
   scaffoldMs: number
   cameraFitMs: number
   repairMs: number
@@ -60,6 +63,8 @@ export type PerformanceRecord = {
 
 export type AnalyzeResult = {
   pkg: SourcePackage
+  /** Printed dimensions read from the source-native drawings (WEB-02). */
+  printed: import('../dimensions/stage.js').DimensionStageResult
   /** Every dimension the model rests on, with its provenance. */
   audit: import('../scaffold/audit.js').MetricAudit
   dimensionReadings: Map<string, import('../scaffold/dimensions.js').DimensionReading>
@@ -104,6 +109,12 @@ export function analyze(
   const tAssets = Date.now()
   const analysed = analyseAssets(pkg, images)
   const assetAnalysisMs = Date.now() - tAssets
+
+  // Printed dimensions are read from the source-native rasters, before the
+  // structural stages downsample anything (WEB-02 §3).
+  const tPrinted = Date.now()
+  const printed = readSourceDimensions(pkg, images)
+  const printedMs = Date.now() - tPrinted
 
   const tScaffold = Date.now()
   const stage = buildMetricScaffold(pkg, analysed, images, graph)
@@ -262,6 +273,7 @@ export function analyze(
 
   return {
     pkg,
+    printed,
     audit: stage.audit,
     dimensionReadings: stage.dimensionReadings,
     analysed,
@@ -281,6 +293,7 @@ export function analyze(
       scaffoldMs,
       cameraFitMs,
       repairMs,
+      printedMs,
       cameraProjections,
       hypothesesEvaluated,
       repairProposals,
