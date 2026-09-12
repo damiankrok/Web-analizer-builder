@@ -99,7 +99,16 @@ async function main(): Promise<void> {
     case 'freeze': {
       const hashes = freezeHashes()
       await mkdir(outDir, { recursive: true })
-      const payload = { frozenAt: new Date().toISOString(), ...hashes }
+      // The code SHA is part of the freeze (§29): the configuration hashes pin
+      // the tunable numbers, and the commit pins the logic that reads them.
+      let codeSha = 'unknown'
+      try {
+        const { execFileSync } = await import('node:child_process')
+        codeSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+      } catch {
+        // A source tree without git still freezes; the report says so.
+      }
+      const payload = { frozenAt: new Date().toISOString(), codeSha, ...hashes }
       await writeFile(FREEZE_FILE, `${canonicalJson(payload)}\n`, 'utf8')
       console.log('freeze written:', JSON.stringify(hashes, null, 2))
       return
@@ -114,6 +123,15 @@ async function main(): Promise<void> {
       }
       const current = freezeHashes()
       const drifted = (Object.keys(current) as (keyof typeof current)[]).filter((k) => frozen[k] !== current[k])
+      if (frozen.codeSha && frozen.codeSha !== 'unknown') {
+        try {
+          const { execFileSync } = await import('node:child_process')
+          const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+          if (head !== frozen.codeSha) drifted.push('codeSha' as keyof typeof current)
+        } catch {
+          // Unverifiable rather than drifted; the configuration hashes stand.
+        }
+      }
       if (drifted.length > 0) {
         throw new Error(
           `refusing to run the holdout: ${drifted.join(', ')} changed since the freeze. ` +
