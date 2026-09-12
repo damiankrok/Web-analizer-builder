@@ -55,13 +55,12 @@ export function classifyBackground(img: RasterImage, precomputed?: Gradients): B
     if (g > r + 8 && g > b + 6 && g > 40) veg.data[i] = 1
   }
 
-  const colourStep = 12
-  const flood = (seeds: number[], target: MaskImage): void => {
+  const flood = (seeds: number[], target: MaskImage, colourStep: number, forceSeeds = false): void => {
     const queue = new Int32Array(w * h)
     let head = 0
     let tail = 0
     for (const s of seeds) {
-      if (!target.data[s] && !barrier.data[s]) {
+      if (!target.data[s] && (forceSeeds || !barrier.data[s])) {
         target.data[s] = 1
         queue[tail++] = s
       }
@@ -100,12 +99,17 @@ export function classifyBackground(img: RasterImage, precomputed?: Gradients): B
     const b = img.data[i * 4 + 2]
     if (b > 120 && b - r > 20 && b >= g) skySeeds.push(i)
   }
-  flood(skySeeds, sky)
+  flood(skySeeds, sky, 12)
 
-  // Ground: seeded from the bottom border only.
+  // Ground: seeded from the bottom rows. Seeds are forced through the contour
+  // barrier and the colour step is looser, because paving and gravel are
+  // textured enough that their own edges would otherwise stop the flood on the
+  // very first pixel — leaving the terrain strip classified as building, where
+  // it bridges the facade to whatever else touches the ground.
   const groundSeeds: number[] = []
-  for (let x = 0; x < w; x++) groundSeeds.push((h - 1) * w + x)
-  flood(groundSeeds, ground)
+  const seedRows = Math.max(1, Math.round(h * 0.02))
+  for (let y = h - seedRows; y < h; y++) for (let x = 0; x < w; x++) groundSeeds.push(y * w + x)
+  flood(groundSeeds, ground, 20, true)
 
   const bg = makeMask(w, h)
   for (let i = 0; i < w * h; i++) bg.data[i] = sky.data[i] || veg.data[i] || ground.data[i] ? 1 : 0
