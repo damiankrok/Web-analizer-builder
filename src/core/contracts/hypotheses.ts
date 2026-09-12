@@ -22,7 +22,13 @@ export type RoofKind =
   | 'GABLE_WITH_DORMER'
   | 'NONE'
 
-/** Compass-ish facade side in the WORLD frame. FRONT faces -Z. */
+/**
+ * Facade side in the WORLD frame.
+ *
+ * FRONT is the plan's lower edge — where ARCHON draws the entrance and the
+ * driveway — and faces +Z. Viewed from the front, LEFT is the -X side, which
+ * keeps "left" meaning the same thing in the model as it does on the page.
+ */
 export type FacadeSide = 'FRONT' | 'REAR' | 'LEFT' | 'RIGHT'
 
 export type RoofHypothesis = {

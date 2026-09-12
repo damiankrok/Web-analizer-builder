@@ -1,10 +1,3 @@
-/**
- * Pipeline stages up to the metric scaffold.
- *
- * Portable: the pipeline takes decoded images as plain DTOs, so the same code
- * runs in Node, in a Web Worker and on the JVM. Fetching and decoding are host
- * concerns that happen before this point.
- */
 import type { RasterImage } from '../contracts/raster.js'
 import type { SourceAsset, SourcePackage } from '../contracts/source.js'
 import { factValue } from '../contracts/source.js'
@@ -19,6 +12,24 @@ import { wallMask, planExtent, fitFootprint, buildPlanAnalysis, type FootprintFi
 import { analyseElevation, type ElevationMeasurement } from '../scaffold/elevation.js'
 import { assembleScaffold, type ScaffoldContradiction } from '../scaffold/metric.js'
 import { EvidenceGraph } from '../evidence/graph.js'
+import type { CameraHypothesis } from '../contracts/camera.js'
+import type { Tessellation } from '../hypotheses/tessellate.js'
+import { worldBounds } from '../hypotheses/tessellate.js'
+import { searchCameras, toCameraHypothesis, viewFromParams, DEFAULT_POSE_SEARCH, type PoseSearchOptions } from '../camera/pose.js'
+import { detectAmbiguity, type AmbiguityReport } from '../camera/ambiguity.js'
+import { classifyCamera, viewWeightFor, DEFAULT_CONFIDENCE, type ConfidenceThresholds } from '../camera/confidence.js'
+import { deriveAnchors, type AnchorDerivation } from '../camera/anchors.js'
+import { extractRenderFeatures, type RenderFeatures } from '../scaffold/render-features.js'
+import { renderPerspective } from '../camera/render.js'
+import { scoreView } from '../scoring/view.js'
+import type { ViewScoreBreakdown } from '../contracts/scoring.js'
+/**
+ * Pipeline stages up to the metric scaffold.
+ *
+ * Portable: the pipeline takes decoded images as plain DTOs, so the same code
+ * runs in Node, in a Web Worker and on the JVM. Fetching and decoding are host
+ * concerns that happen before this point.
+ */
 
 export type AnalysedAsset = {
   asset: SourceAsset
@@ -239,5 +250,176 @@ export const projectionSummary = (analysed: readonly AnalysedAsset[]): Record<Pr
     UNKNOWN: 0,
   }
   for (const a of analysed) out[a.projection.type]++
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// Camera stage
+// ---------------------------------------------------------------------------
+
+
+export type ViewCameras = {
+  assetId: string
+  role: string
+  hypotheses: CameraHypothesis[]
+  /** Full structural score of the best hypothesis, used for re-ranking. */
+  scores: ViewScoreBreakdown[]
+  ambiguity: AmbiguityReport
+  features: RenderFeatures
+  anchors: AnchorDerivation
+  evaluations: number
+  elapsedMs: number
+  notes: string[]
+}
+
+export type CameraStageOptions = {
+  pose: PoseSearchOptions
+  confidence: ConfidenceThresholds
+  /** Resolution of the render used for anchor visibility tests. */
+  visibilitySize: number
+}
+
+export const DEFAULT_CAMERA_STAGE: CameraStageOptions = {
+  pose: DEFAULT_POSE_SEARCH,
+  confidence: DEFAULT_CONFIDENCE,
+  visibilitySize: 256,
+}
+
+/**
+ * Fit cameras for every perspective view against one shared building (§26).
+ *
+ * Each render gets its own camera; they are never averaged into a single pose,
+ * because the whole point of the multi-view architecture is that independent
+ * cameras have to agree about one geometry rather than the geometry being bent
+ * to suit one camera.
+ */
+export function fitCameras(
+  analysed: readonly AnalysedAsset[],
+  tess: Tessellation,
+  graph: EvidenceGraph,
+  opts: CameraStageOptions = DEFAULT_CAMERA_STAGE,
+): ViewCameras[] {
+  const bounds = worldBounds(tess)
+  const scene = { centre: bounds.centre, radius: bounds.radius }
+  const out: ViewCameras[] = []
+
+  for (const a of analysed) {
+    if (a.projection.type !== 'PERSPECTIVE_PINHOLE' && a.projection.type !== 'PERSPECTIVE_SHIFTED') continue
+    const started = Date.now()
+    const notes: string[] = []
+    const raster = a.raster
+    const features = extractRenderFeatures(raster.gray, raster.building.mask, raster.segments, a.asset.id)
+
+    const search = searchCameras(
+      tess.tris,
+      raster.building.mask,
+      scene,
+      raster.image.width,
+      raster.image.height,
+      opts.pose,
+    )
+    notes.push(...search.notes, ...features.notes)
+
+    const ambiguity = detectAmbiguity(search.candidates, a.asset.id)
+    notes.push(...ambiguity.notes)
+
+    type Scored = {
+      hypothesis: CameraHypothesis
+      derived: AnchorDerivation
+      score: ViewScoreBreakdown
+      reasons: string[]
+    }
+    const scored: Scored[] = []
+
+    for (const [rank, candidate] of search.candidates.entries()) {
+      const view = viewFromParams(candidate.params, scene, raster.image.width, raster.image.height)
+      const visH = Math.max(8, Math.round((opts.visibilitySize * raster.image.height) / raster.image.width))
+      const target = renderPerspective(tess.tris, view, opts.visibilitySize, visH)
+      const derived = deriveAnchors(tess.anchors, features.features, view, target, 1)
+
+      const verdict = classifyCamera(
+        {
+          cost: candidate.cost,
+          iou: candidate.iou,
+          anchorMatches: derived.matches.length,
+          meanAnchorResidualPx: derived.meanResidualPx,
+          ambiguity,
+          hasVanishingConstraint: a.projection.geometry.horizontalConverges,
+        },
+        opts.confidence,
+      )
+
+      const hypothesis = toCameraHypothesis(
+        candidate,
+        scene,
+        a.asset.id,
+        a.projection.type,
+        raster.image.width,
+        raster.image.height,
+        rank,
+      )
+      hypothesis.anchorMatches = derived.matches
+      hypothesis.confidenceClass = verdict.klass
+      hypothesis.visibilityScore = derived.matches.length + derived.unmatchedVisible.length > 0
+        ? derived.matches.length / (derived.matches.length + derived.unmatchedVisible.length)
+        : 0
+      if (ambiguity.groupId && ambiguity.memberIndices.includes(rank)) hypothesis.ambiguityGroup = ambiguity.groupId
+
+      // The silhouette descriptor drives refinement because it is smooth, but
+      // it cannot tell a gable end seen from the front from the same gable seen
+      // from the back. Ranking uses the full structural score, where the
+      // openings, the garage wing and the edge map do separate them.
+      const score = scoreView({
+        assetId: a.asset.id,
+        camera: hypothesis,
+        view,
+        tess,
+        sourceMask: raster.building.mask,
+        sourceEdges: raster.buildingEdges,
+        features,
+        scoreSize: opts.pose.scoreSize,
+      })
+      hypothesis.edgeScore = score.edge
+      scored.push({ hypothesis, derived, score, reasons: verdict.reasons })
+    }
+
+    scored.sort((x, y) => x.score.total - y.score.total)
+    const hypotheses = scored.map((x, rank) => ({ ...x.hypothesis, id: `cam_${a.asset.id}_${rank}`, rank }))
+    const bestAnchors = scored[0]?.derived ?? { matches: [], unmatchedVisible: [], notVisible: [], meanResidualPx: null }
+    if (scored[0]) notes.push(...scored[0].reasons)
+
+    for (const [rank, h] of hypotheses.entries()) {
+      graph.add({
+        id: h.id,
+        type: 'CameraHypothesis',
+        sourceAssetId: a.asset.id,
+        authority: 'RENDER_INFERRED',
+        confidence: viewWeightFor(h.confidenceClass),
+        payload: {
+          rank,
+          confidenceClass: h.confidenceClass,
+          silhouette: h.silhouetteScore,
+          edge: h.edgeScore,
+          anchorMatches: h.anchorMatches.length,
+          ambiguous: ambiguity.ambiguous,
+          viewScore: scored[rank].score.total,
+        },
+      })
+      graph.relate('projectsTo', h.id, a.asset.id, viewWeightFor(h.confidenceClass))
+    }
+
+    out.push({
+      assetId: a.asset.id,
+      role: a.asset.role,
+      hypotheses,
+      scores: scored.map((x) => x.score),
+      ambiguity,
+      features,
+      anchors: bestAnchors,
+      evaluations: search.evaluations,
+      elapsedMs: Date.now() - started,
+      notes,
+    })
+  }
   return out
 }
