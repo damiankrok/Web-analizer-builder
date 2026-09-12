@@ -192,6 +192,7 @@ npm run standalone:build    # bundle + vite build + artifact page -> dist-standa
 npm run standalone:serve    # static server on http://localhost:4173
 npm run standalone:verify   # Playwright, Pixel 5 viewport, 11 checks -> out/preview/
 STRICT_CSP=1 npm run standalone:verify   # same, under the artifact host's CSP
+PAGE=hosted.html STRICT_CSP=1 npm run standalone:verify   # the published preview's own shape
 ```
 
 `standalone:bundle` takes project keys (`npm run standalone:bundle -- A B`) and
@@ -209,6 +210,7 @@ The complete set of variables it reads:
 | --- | --- | --- |
 | `VITE_STANDALONE` | `src/ui/App.tsx` | `"1"` selects the bundled-source build. Set by `vite.standalone.config.ts` at build time; you do not set it by hand. |
 | `STRICT_CSP` | `scripts/verify-standalone.mjs` | `1` serves the build under a CSP mirroring the artifact host (`connect-src 'none'`, `worker-src blob:`). |
+| `PAGE` | `scripts/verify-standalone.mjs` | Which page to drive. Empty (default) is `index.html`, the plain build. `hosted.html` wraps `artifact.html` in the document skeleton the artifact host supplies, which is what the published preview actually serves. |
 | `HOST` | `scripts/serve-standalone.mjs` | Bind address for the static server. `0.0.0.0` to reach it from another device. Default `127.0.0.1`. |
 | `PORT` | `scripts/serve-standalone.mjs` | Static server port. Default `4173`. |
 | `PLAYWRIGHT_BROWSERS_PATH` | Playwright | Only needed if Chromium is installed somewhere non-standard. |
@@ -272,10 +274,18 @@ editable; the Marcówki URL can be submitted; source fetching works in the
 deployed environment; the analysis runs and its hard constraints are satisfied;
 the 3D model renders; orbit and zoom respond; all twelve source thumbnails
 decode; the camera and debug panels populate; no request leaves the published
-origin; and an unbundled URL is refused with a reason. Run it with
-`STRICT_CSP=1` as well — that serves the same build under a
-Content-Security-Policy matching the artifact host, which exercises the
-worker-blob and no-network paths instead of assuming them.
+origin; and an unbundled URL is refused with a reason.
+
+Run it three ways, because each catches something the others do not: plain
+(`npm run standalone:verify`); under the host's Content-Security-Policy
+(`STRICT_CSP=1 …`), which exercises the worker-blob and no-network paths instead
+of assuming them; and against the published preview's own document shape
+(`PAGE=hosted.html STRICT_CSP=1 …`), which is `artifact.html` wrapped in the
+skeleton the host supplies rather than the plain `index.html`. The last one is
+the closest thing to testing the deployed page without being signed in to it.
+
+A single console 404 for `/favicon.ico` is expected when serving locally: the
+build does not carry one and the host supplies it.
 
 ### Troubleshooting
 

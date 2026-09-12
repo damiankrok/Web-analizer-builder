@@ -169,6 +169,7 @@ export function App(): JSX.Element {
   const [hiddenGroups, setHiddenGroups] = useState<ReadonlySet<string>>(new Set())
   const [repairCycles, setRepairCycles] = useState(2)
   const worker = useRef<Worker | null>(null)
+  const modelPanel = useRef<HTMLElement | null>(null)
 
   const handle = useRef<{ cancel: () => void } | null>(null)
 
@@ -220,6 +221,13 @@ export function App(): JSX.Element {
     },
     [],
   )
+
+  // A run takes tens of seconds, and on a phone the model panel sits below the
+  // fold behind the source panel. When the result arrives, show the thing the
+  // run was for rather than leaving the viewer looking at the form.
+  useEffect(() => {
+    if (result) modelPanel.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [result])
 
   const hiddenParts = useMemo(() => {
     const out = new Set<string>()
@@ -299,7 +307,7 @@ export function App(): JSX.Element {
 
       {result && (
         <>
-          <section className="panel">
+          <section className="panel" ref={modelPanel}>
             <h2>3D model</h2>
             <div className="row wrap">
               {PART_GROUPS.map((g) => (

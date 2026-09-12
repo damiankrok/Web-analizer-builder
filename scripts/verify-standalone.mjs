@@ -17,6 +17,10 @@ const SHOTS = 'out/preview'
 mkdirSync(SHOTS, { recursive: true })
 
 const STRICT_CSP = process.env.STRICT_CSP === '1'
+// Which page to drive. `index.html` is the plain build; `artifact.html` is the
+// same bundle wrapped for a host that supplies its own document skeleton, and
+// is what the published preview serves — so both are worth checking.
+const PAGE = process.env.PAGE ?? ''
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -27,11 +31,29 @@ const TYPES = {
   '.json': 'application/json',
 }
 
+/**
+ * The document skeleton the artifact host wraps a page in: a charset and
+ * viewport meta plus a small reset. Reproduced here so `PAGE=hosted.html`
+ * drives the published preview's actual shape rather than an approximation of
+ * it — `artifact.html` on its own has no head of its own by design.
+ */
+const HOST_SKELETON = (content) => `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>:root{color-scheme:light}body{margin:0;font:14px system-ui,sans-serif;background:#faf9f7}
+img{max-width:100%}[hidden]{display:none!important}</style>
+</head><body>
+${content}
+</body></html>
+`
+
 const server = createServer(async (req, res) => {
   const path = (req.url ?? '/').split('?')[0]
   const rel = normalize(path === '/' ? '/index.html' : path).replace(/^(\.\.[/\\])+/, '')
   try {
-    const body = await readFile(join(ROOT, rel))
+    const body =
+      rel.replace(/^[/\\]+/, '') === 'hosted.html'
+        ? Buffer.from(HOST_SKELETON(await readFile(join(ROOT, 'artifact.html'), 'utf8')), 'utf8')
+        : await readFile(join(ROOT, rel))
     const headers = { 'content-type': TYPES[extname(rel)] ?? 'application/octet-stream' }
     if (STRICT_CSP) {
       // Mirrors the artifact host: scripts from self and a CDN allowlist,
@@ -64,6 +86,10 @@ const consoleErrors = []
 page.on('console', (m) => {
   if (m.type() === 'error') consoleErrors.push(m.text())
 })
+// Serving locally there is no favicon, and Chromium asks for one anyway; the
+// artifact host supplies it. Noted so the resulting console 404 is not read as
+// a missing build file.
+const EXPECTED_404 = ['/favicon.ico']
 page.on('pageerror', (e) => consoleErrors.push(String(e)))
 // Any request leaving the origin would mean the build depends on something it
 // does not carry.
@@ -76,7 +102,7 @@ page.on('response', (r) => {
   if (r.status() === 404) notFound.push(r.url().replace(base, ''))
 })
 
-await page.goto(base, { waitUntil: 'load' })
+await page.goto(`${base}/${PAGE}`, { waitUntil: 'load' })
 check('1. page loads on a mobile viewport', (await page.locator('h1').count()) > 0, `${(await page.viewportSize()).width}px wide`)
 await page.screenshot({ path: join(SHOTS, '01-loaded.png'), fullPage: false })
 
@@ -103,11 +129,24 @@ const canvas = page.locator('canvas').first()
 const box = await canvas.boundingBox()
 check('6. 3D model is displayed', box !== null && box.width > 100 && box.height > 100, box ? `${Math.round(box.width)}×${Math.round(box.height)} canvas` : 'no canvas')
 
-// Orbit and zoom: drag, then wheel, and compare pixels.
+// Orbit and zoom: drag, then wheel, and compare pixels. Synthetic mouse events
+// are delivered at viewport coordinates, so the canvas has to be on screen
+// first — at phone height it starts below the fold.
+await canvas.scrollIntoViewIfNeeded()
+// The app scrolls the model into view itself when a run finishes, and that
+// scroll is smooth — so wait for the position to settle before reading it.
+let settled = null
+for (let i = 0; i < 40; i++) {
+  const now = await canvas.boundingBox()
+  if (settled && Math.abs(settled.y - now.y) < 0.5) break
+  settled = now
+  await page.waitForTimeout(100)
+}
+const drag = await canvas.boundingBox()
 const before = await canvas.screenshot()
-await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+await page.mouse.move(drag.x + drag.width / 2, drag.y + drag.height / 2)
 await page.mouse.down()
-await page.mouse.move(box.x + box.width / 2 + 90, box.y + box.height / 2 + 30, { steps: 12 })
+await page.mouse.move(drag.x + drag.width / 2 + 90, drag.y + drag.height / 2 + 30, { steps: 12 })
 await page.mouse.up()
 await page.waitForTimeout(400)
 const afterDrag = await canvas.screenshot()
@@ -173,7 +212,9 @@ await page.waitForFunction(() => /cannot fetch archon\.pl directly/i.test(docume
 check('11. an unbundled URL is refused with the reason', true, 'CLI caching step quoted')
 await page.screenshot({ path: join(SHOTS, '06-unbundled-url.png') })
 
-if (notFound.length > 0) console.log(`\n404s (${notFound.length}): ${notFound.slice(0, 8).join(' ')}`)
+const unexpected404 = notFound.filter((u) => !EXPECTED_404.includes(u))
+if (unexpected404.length > 0) console.log(`\n404s (${unexpected404.length}): ${unexpected404.slice(0, 8).join(' ')}`)
+else if (notFound.length > 0) console.log(`\n404s: ${notFound.join(' ')} only — supplied by the host, not by the build`)
 if (consoleErrors.length > 0) console.log(`\nconsole errors (${consoleErrors.length}):\n  ${consoleErrors.slice(0, 6).join('\n  ')}`)
 
 await browser.close()
