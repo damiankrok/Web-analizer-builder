@@ -9,13 +9,17 @@ import { classifyProjection, type ProjectionClassification } from '../projection
 import { parseTechnology } from '../source/facts.js'
 import { analyseSectionGeometry, buildSectionAnalysis, gableSpanFromSection, sectionMassWidths, type SectionGeometry } from '../scaffold/section.js'
 import { wallMask, planExtent, fitFootprint, buildPlanAnalysis, type FootprintFit } from '../scaffold/plan.js'
-import { analyseElevation, type ElevationMeasurement } from '../scaffold/elevation.js'
+import { readDimensions, type DimensionReading } from '../scaffold/dimensions.js'
+import { buildAudit, type AuditInput, type MetricAudit } from '../scaffold/audit.js'
+import { analyseElevation, facadeOf, type ElevationMeasurement } from '../scaffold/elevation.js'
+import { solveFacadeFeatures, type FacadeFeatureSet } from '../scaffold/facade-features.js'
+import type { FacadeSide } from '../contracts/hypotheses.js'
 import { assembleScaffold, type ScaffoldContradiction } from '../scaffold/metric.js'
 import { EvidenceGraph } from '../evidence/graph.js'
 import type { CameraHypothesis } from '../contracts/camera.js'
 import type { Tessellation } from '../hypotheses/tessellate.js'
 import { worldBounds } from '../hypotheses/tessellate.js'
-import { searchCameras, toCameraHypothesis, viewFromParams, DEFAULT_POSE_SEARCH, type PoseSearchOptions } from '../camera/pose.js'
+import { searchCameras, toCameraHypothesis, viewFromParams, DEFAULT_POSE_SEARCH, type PoseParams, type PoseSearchOptions } from '../camera/pose.js'
 import { detectAmbiguity, type AmbiguityReport } from '../camera/ambiguity.js'
 import { classifyCamera, viewWeightFor, DEFAULT_CONFIDENCE, type ConfidenceThresholds } from '../camera/confidence.js'
 import { deriveAnchors, type AnchorDerivation } from '../camera/anchors.js'
@@ -63,6 +67,14 @@ export type ScaffoldStageResult = {
   sectionGeometry: SectionGeometry | null
   footprintFit: FootprintFit | null
   elevationMeasurements: Map<string, ElevationMeasurement>
+  /** Architectural features solved per facade from the orthographic elevations. */
+  facadeFeatures: FacadeFeatureSet[]
+  /** Facades whose silhouette shows a gable apex. */
+  gableFacades: FacadeSide[]
+  /** Printed dimensions read off each plan. */
+  dimensionReadings: Map<string, DimensionReading>
+  /** Every dimension the model rests on, with its provenance. */
+  audit: MetricAudit
   notes: string[]
 }
 
@@ -108,6 +120,7 @@ export function buildMetricScaffold(
   let sectionWidthM: number | null = null
   let sectionSpansM: number[] = []
   let gableSpanM: number | null = null
+  let wallThicknessesM: number[] = []
   if (sectionAsset) {
     sectionGeometry = analyseSectionGeometry(
       sectionAsset.raster.segments,
@@ -122,6 +135,7 @@ export function buildMetricScaffold(
       // Wall faces alternate outer/inner, so a mass span is the gap between
       // consecutive faces; the thin ones are wall thicknesses, not masses.
       sectionSpansM = widths.spansM.filter((s) => s > 1.0)
+      wallThicknessesM = widths.spansM.filter((s) => s <= 1.0)
     }
     const gable = gableSpanFromSection(sectionGeometry)
     if (gable) {
@@ -148,7 +162,10 @@ export function buildMetricScaffold(
 
   // --- Plans -----------------------------------------------------------
   const plans: PlanAnalysis[] = []
+  const dimensionReadings = new Map<string, DimensionReading>()
   let footprintFit: FootprintFit | null = null
+  let planChainWidthM: number | null = null
+  let planChainDepthM: number | null = null
   const groundPlan = analysed.find((a) => a.asset.role === 'PLAN_GROUND')
   if (groundPlan) {
     const image = images.get(groundPlan.asset.id)
@@ -158,6 +175,33 @@ export function buildMetricScaffold(
       footprintFit = fitFootprint(extent, publishedArea, sectionWidthM)
       const analysis = buildPlanAnalysis(groundPlan.asset.id, 'GROUND', extent, footprintFit)
       plans.push(analysis)
+
+      // Printed dimensions. The plan's own dimension chains are an independent
+      // measurement of the same building the wall extent gave, which is exactly
+      // the cross-source corroboration the audit reports on.
+      const gray = toGray(image)
+      const reading = readDimensions(gray, {
+        pixelsPerMetre: analysis.calibration.pixelsPerMetre,
+        predictionTolerance: 0.08,
+        chainTolerance: 0.12,
+        minGlyphsPerLabel: 2,
+      })
+      dimensionReadings.set(groundPlan.asset.id, reading)
+      notes.push(...reading.notes.map((n) => `plan dimensions: ${n}`))
+
+      // A chain measures the building overall only if it actually spans it.
+      // A short interior chain is a real dimension of something, but it is not
+      // the overall one, and offering it as such would manufacture a conflict.
+      const overallChain = (axis: 'HORIZONTAL' | 'VERTICAL', extentPx: number): number | null => {
+        const candidates = reading.chains
+          .filter((c) => c.axis === axis && c.parts.length >= 1)
+          .map((c) => ({ sum: c.sumM, span: c.parts.reduce((s2, p) => s2 + (p.toPx - p.fromPx), 0) }))
+          .filter((c) => c.span >= extentPx * 0.75)
+          .sort((a, b) => b.span - a.span)
+        return candidates.length > 0 ? candidates[0].sum : null
+      }
+      planChainWidthM = overallChain('HORIZONTAL', extent.widthPx)
+      planChainDepthM = overallChain('VERTICAL', extent.heightPx)
       graph.add({
         id: `plan_${groundPlan.asset.id}`,
         type: 'PlanRegion',
@@ -219,6 +263,74 @@ export function buildMetricScaffold(
     }
   }
 
+  // --- architectural features per facade -------------------------------
+  // Solved after the scaffold's first pass, because the eave height decides
+  // which part of a facade is wall and which is roof.
+  const provisionalEave = (() => {
+    const ridge = sectionAnalysis?.levels.find((l) => l.kind === 'RIDGE')?.y ?? null
+    if (ridge === null || !gableSpanM || !tech.roofPitchDeg) return null
+    return ridge - (gableSpanM / 2) * Math.tan((tech.roofPitchDeg * Math.PI) / 180)
+  })()
+
+  const facadeFeatures: FacadeFeatureSet[] = []
+  const gableFacades: FacadeSide[] = []
+  for (const a of analysed) {
+    if (a.projection.type !== 'ORTHOGRAPHIC_TECHNICAL') continue
+    const facade = facadeOf(a.asset.role)
+    if (!facade) continue
+    const measurement = elevationMeasurements.get(a.asset.id)
+    if (!measurement) continue
+    const set = solveFacadeFeatures({
+      facade,
+      assetId: a.asset.id,
+      gray: a.raster.gray,
+      gradients: a.raster.gradients,
+      silhouette: measurement.silhouette,
+      publishedHeightM: publishedHeight,
+      eaveHeightM: provisionalEave,
+      // Only a gable end shows the pitch in its outline; a side elevation of
+      // the same roof is flat-topped, and predicting a slope there would find
+      // protrusions all along the ridge.
+      roofPitchDeg: null,
+    })
+    facadeFeatures.push(set)
+    // A gable facade is one whose silhouette rises to a pronounced apex well
+    // inside its own width; a side elevation of the same roof is flat-topped.
+    const sil = measurement.silhouette
+    const apexFraction = sil.widthPx > 0 ? (sil.apexX - sil.minX) / sil.widthPx : 0
+    const shoulderRow = Math.max(
+      ...[0.08, 0.92].map((f) => {
+        const x = Math.round(sil.minX + sil.widthPx * f)
+        for (let y = 0; y < sil.mask.height; y++) if (sil.mask.data[y * sil.mask.width + x]) return y
+        return sil.groundRow
+      }),
+    )
+    const peakiness = sil.heightPx > 0 ? (shoulderRow - sil.topRow) / sil.heightPx : 0
+    if (apexFraction > 0.12 && apexFraction < 0.88 && peakiness > 0.2) gableFacades.push(facade)
+  }
+
+  // Re-solve the gable facades now that they are known to be gables: their
+  // roof outline is a pitch, not a flat top, and protrusion detection needs it.
+  if (tech.roofPitchDeg) {
+    for (let i = 0; i < facadeFeatures.length; i++) {
+      const set = facadeFeatures[i]
+      if (!gableFacades.includes(set.facade)) continue
+      const asset = analysed.find((x) => x.asset.id === set.assetId)
+      const measurement = elevationMeasurements.get(set.assetId)
+      if (!asset || !measurement) continue
+      facadeFeatures[i] = solveFacadeFeatures({
+        facade: set.facade,
+        assetId: set.assetId,
+        gray: asset.raster.gray,
+        gradients: asset.raster.gradients,
+        silhouette: measurement.silhouette,
+        publishedHeightM: publishedHeight,
+        eaveHeightM: provisionalEave,
+        roofPitchDeg: tech.roofPitchDeg,
+      })
+    }
+  }
+
   const { scaffold, contradictions } = assembleScaffold({
     publishedFootprintAreaM2: publishedArea,
     publishedBuildingHeightM: publishedHeight,
@@ -229,6 +341,7 @@ export function buildMetricScaffold(
     sectionWidthM,
     sectionSpansM,
     gableSpanM,
+    wallThicknessesM,
     plans,
     elevations,
     footprint: footprintFit?.polygon ?? null,
@@ -238,7 +351,188 @@ export function buildMetricScaffold(
     graph.relate('contradicts', `${c.key}:${c.a.source}`, `${c.key}:${c.b.source}`, c.deltaAbs, c.description)
   }
 
-  return { scaffold, contradictions, sectionGeometry, footprintFit, elevationMeasurements, notes }
+  // --- metric audit -----------------------------------------------------
+  const auditInputs: AuditInput[] = [
+    {
+      key: 'building_width',
+      label: 'overall building width',
+      unit: 'm',
+      toleranceAbs: 0.35,
+      candidates: [
+        { source: 'plan wall extent fitted to the published footprint area', value: scaffold.widthM, provenance: 'SOURCE_DERIVED', confidence: 0.8 },
+        { source: 'section cut between outermost wall faces', value: sectionWidthM, provenance: 'GEOMETRIC_INFERRED', confidence: 0.75 },
+        { source: 'plan dimension chain', value: planChainWidthM, provenance: 'GEOMETRIC_INFERRED', confidence: 0.7 },
+      ],
+    },
+    {
+      key: 'building_depth',
+      label: 'overall building depth',
+      unit: 'm',
+      toleranceAbs: 0.35,
+      candidates: [
+        { source: 'plan wall extent fitted to the published footprint area', value: scaffold.depthM, provenance: 'SOURCE_DERIVED', confidence: 0.78 },
+        { source: 'plan dimension chain', value: planChainDepthM, provenance: 'GEOMETRIC_INFERRED', confidence: 0.7 },
+      ],
+    },
+    {
+      key: 'footprint_area',
+      label: 'footprint area',
+      unit: 'm2',
+      toleranceAbs: 1.5,
+      candidates: [
+        { source: 'published project data', value: publishedArea, provenance: 'SOURCE_EXACT', confidence: 0.98 },
+        { source: 'fitted footprint polygon', value: scaffold.footprintAreaM2, provenance: 'GEOMETRIC_INFERRED', confidence: 0.7 },
+      ],
+    },
+    {
+      key: 'building_height',
+      label: 'building height above terrain',
+      unit: 'm',
+      toleranceAbs: 0.2,
+      candidates: [
+        { source: 'published project data', value: publishedHeight, provenance: 'SOURCE_EXACT', confidence: 0.98 },
+        {
+          source: 'section ridge above terrain',
+          value: sectionAnalysis ? (levelValue(sectionAnalysis.levels, 'RIDGE') ?? 0) - (levelValue(sectionAnalysis.levels, 'PLINTH') ?? 0) : null,
+          provenance: 'GEOMETRIC_INFERRED',
+          confidence: 0.75,
+        },
+      ],
+    },
+    {
+      key: 'ridge_level',
+      label: 'ridge above finished floor',
+      unit: 'm',
+      toleranceAbs: 0.2,
+      candidates: [
+        { source: 'section', value: sectionAnalysis ? levelValue(sectionAnalysis.levels, 'RIDGE') : null, provenance: 'GEOMETRIC_INFERRED', confidence: 0.8 },
+        { source: 'elevation silhouette apex', value: elevations[0]?.ridgeY ?? null, provenance: 'VISUAL_INFERRED', confidence: 0.4 },
+      ],
+    },
+    {
+      key: 'eave_level',
+      label: 'eave above finished floor',
+      unit: 'm',
+      toleranceAbs: 0.25,
+      candidates: [
+        { source: 'gable geometry from the section ridge, span and published pitch', value: scaffold.eaveY, provenance: 'GEOMETRIC_INFERRED', confidence: 0.75 },
+        {
+          source: 'elevation band at eave level',
+          value: facadeFeatures.flatMap((f) => f.bands).filter((b) => Math.abs(b.t - scaffold.eaveY) < 0.6).map((b) => b.t)[0] ?? null,
+          provenance: 'VISUAL_INFERRED',
+          confidence: 0.5,
+        },
+      ],
+    },
+    {
+      key: 'upper_floor_level',
+      label: 'upper floor level',
+      unit: 'm',
+      toleranceAbs: 0.2,
+      candidates: [
+        {
+          source: 'section slab line',
+          value: sectionAnalysis ? sectionAnalysis.levels.filter((l) => l.kind === 'SLAB' && l.y > 1.5).sort((a, b) => b.y - a.y)[0]?.y ?? null : null,
+          provenance: 'GEOMETRIC_INFERRED',
+          confidence: 0.78,
+        },
+      ],
+    },
+    {
+      key: 'roof_pitch',
+      label: 'main roof pitch',
+      unit: 'deg',
+      toleranceAbs: 2,
+      candidates: [
+        { source: 'published technology note', value: tech.roofPitchDeg, provenance: 'SOURCE_EXACT', confidence: 0.95 },
+        { source: 'section roof slope segments', value: sectionGeometry?.pitchDeg ?? null, provenance: 'GEOMETRIC_INFERRED', confidence: 0.8 },
+      ],
+    },
+    {
+      key: 'knee_wall',
+      label: 'knee wall height',
+      unit: 'm',
+      toleranceAbs: 0.1,
+      candidates: [{ source: 'published technology note', value: tech.kneeWallM, provenance: 'SOURCE_EXACT', confidence: 0.95 }],
+    },
+    {
+      key: 'wall_thickness',
+      label: 'exterior wall thickness',
+      unit: 'm',
+      toleranceAbs: 0.08,
+      candidates: [
+        { source: 'section wall face pairs', value: scaffold.wallThicknessM, provenance: 'GEOMETRIC_INFERRED', confidence: 0.7 },
+        {
+          source: 'published wall build-up',
+          value: parseWallBuildUp(pkg.notes['ściany'] ?? pkg.notes['sciany'] ?? ''),
+          provenance: 'SOURCE_EXACT',
+          confidence: 0.9,
+        },
+      ],
+    },
+    {
+      key: 'gable_span',
+      label: 'span covered by the pitched roof',
+      unit: 'm',
+      toleranceAbs: 0.3,
+      candidates: [
+        { source: 'section wall faces symmetric about the ridge', value: gableSpanM, provenance: 'GEOMETRIC_INFERRED', confidence: 0.8 },
+      ],
+    },
+    {
+      key: 'garage_area',
+      label: 'garage floor area',
+      unit: 'm2',
+      toleranceAbs: 2,
+      candidates: [{ source: 'published room table', value: factValue(pkg, 'garage_area'), provenance: 'SOURCE_EXACT', confidence: 0.98 }],
+    },
+    {
+      key: 'ground_rooms',
+      label: 'ground floor room count',
+      unit: 'count',
+      toleranceAbs: 0,
+      candidates: [
+        { source: 'published room table', value: pkg.rooms.filter((r) => r.storey === 'GROUND').length || null, provenance: 'SOURCE_EXACT', confidence: 0.98 },
+      ],
+    },
+    {
+      key: 'upper_rooms',
+      label: 'upper floor room count',
+      unit: 'count',
+      toleranceAbs: 0,
+      candidates: [
+        { source: 'published room table', value: pkg.rooms.filter((r) => r.storey === 'UPPER').length || null, provenance: 'SOURCE_EXACT', confidence: 0.98 },
+      ],
+    },
+  ]
+
+  const audit = buildAudit(auditInputs)
+
+  return {
+    scaffold,
+    contradictions,
+    sectionGeometry,
+    footprintFit,
+    elevationMeasurements,
+    facadeFeatures,
+    gableFacades,
+    dimensionReadings,
+    audit,
+    notes,
+  }
+}
+
+const levelValue = (levels: readonly { kind: string; y: number }[], kind: string): number | null => {
+  const found = levels.filter((l) => l.kind === kind)
+  return found.length > 0 ? found[0].y : null
+}
+
+/** Sum the thicknesses printed in a wall build-up note, e.g. "25 cm ... 20 cm". */
+export function parseWallBuildUp(note: string): number | null {
+  const matches = [...note.matchAll(/(\d+(?:[.,]\d+)?)\s*cm/gi)].map((m) => Number(m[1].replace(',', '.')))
+  if (matches.length === 0) return null
+  const total = matches.reduce((s2, x) => s2 + x, 0) / 100
+  return total > 0.1 && total < 1.2 ? total : null
 }
 
 export const projectionSummary = (analysed: readonly AnalysedAsset[]): Record<ProjectionType, number> => {
@@ -261,6 +555,8 @@ export const projectionSummary = (analysed: readonly AnalysedAsset[]): Record<Pr
 export type ViewCameras = {
   assetId: string
   role: string
+  /** Pose parameters of each hypothesis, kept so a repair can re-fit from them. */
+  poses: PoseParams[]
   hypotheses: CameraHypothesis[]
   /** Full structural score of the best hypothesis, used for re-ranking. */
   scores: ViewScoreBreakdown[]
@@ -298,6 +594,8 @@ export function fitCameras(
   tess: Tessellation,
   graph: EvidenceGraph,
   opts: CameraStageOptions = DEFAULT_CAMERA_STAGE,
+  /** Previous poses per asset, to re-fit from during the repair loop (§27). */
+  seeds?: Map<string, PoseParams[]>,
 ): ViewCameras[] {
   const bounds = worldBounds(tess)
   const scene = { centre: bounds.centre, radius: bounds.radius }
@@ -317,6 +615,8 @@ export function fitCameras(
       raster.image.width,
       raster.image.height,
       opts.pose,
+      null,
+      seeds?.get(a.asset.id) ?? [],
     )
     notes.push(...search.notes, ...features.notes)
 
@@ -330,6 +630,7 @@ export function fitCameras(
       reasons: string[]
     }
     const scored: Scored[] = []
+    const poses: PoseParams[] = []
 
     for (const [rank, candidate] of search.candidates.entries()) {
       const view = viewFromParams(candidate.params, scene, raster.image.width, raster.image.height)
@@ -369,6 +670,7 @@ export function fitCameras(
       // it cannot tell a gable end seen from the front from the same gable seen
       // from the back. Ranking uses the full structural score, where the
       // openings, the garage wing and the edge map do separate them.
+      poses.push(candidate.params)
       const score = scoreView({
         assetId: a.asset.id,
         camera: hypothesis,
@@ -411,6 +713,7 @@ export function fitCameras(
     out.push({
       assetId: a.asset.id,
       role: a.asset.role,
+      poses: scored.map((_, i) => poses[i]),
       hypotheses,
       scores: scored.map((x) => x.score),
       ambiguity,

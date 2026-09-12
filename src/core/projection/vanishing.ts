@@ -27,6 +27,9 @@ import {
   type VpOptions,
 } from './vp-detect.js'
 
+export { fitVanishingPoint, groupLineFamilies, detectVanishingPoints } from './vp-detect.js'
+export type { LineFamilies } from './vp-detect.js'
+
 export type { VpCandidate, VpOptions } from './vp-detect.js'
 export type { HomogPoint, VanishingModel } from './vp-detect.js'
 

@@ -61,7 +61,15 @@ export function checkConstraints(h: BuildingHypothesis): ConstraintCheck[] {
       }
       case 'garage_area': {
         const garage = h.masses.find((m) => m.kind === 'GARAGE')
-        actual = garage ? Math.abs(polygonArea(garage.footprint.outer)) : 0
+        if (!garage) {
+          actual = 0
+          break
+        }
+        // Interior floor area: the exterior footprint inset by the wall
+        // thickness, which is what a published usable-area figure measures.
+        const b = boundsOf(garage.footprint.outer)
+        const t = h.wallThicknessM
+        actual = Math.max(0, b.maxX - b.minX - 2 * t) * Math.max(0, b.maxZ - b.minZ - 2 * t)
         break
       }
       default:

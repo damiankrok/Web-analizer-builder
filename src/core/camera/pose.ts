@@ -146,6 +146,16 @@ export function searchCameras(
   imageHeight: number,
   opts: PoseSearchOptions = DEFAULT_POSE_SEARCH,
   azimuthPrior: number | null = null,
+  /**
+   * Poses to re-fit from instead of searching the whole space.
+   *
+   * A geometry repair moves the building by centimetres, so its cameras move by
+   * about as much. Re-running the full 360-degree grid for every proposal costs
+   * seconds per view and also risks jumping to a different basin — which would
+   * make the repair comparison meaningless, since the score would change
+   * because the camera moved rather than because the geometry improved.
+   */
+  refitFrom: readonly PoseParams[] = [],
 ): PoseSearchResult {
   const notes: string[] = []
   const size = opts.scoreSize
@@ -169,6 +179,30 @@ export function searchCameras(
     for (let i = 0; i < residual.length; i++) s += residual[i] * residual[i]
     const cost = Math.sqrt(s / residual.length)
     return { params: p, cost, iou: maskIoU(target.mask, reference), descriptor }
+  }
+
+  // --- re-fit from supplied seeds --------------------------------------
+  if (refitFrom.length > 0) {
+    const lowerSeed = Float64Array.from([-Infinity, deg2rad(-12), scene.radius * 1.1, deg2rad(12), -0.35, -0.35, -scene.radius])
+    const upperSeed = Float64Array.from([Infinity, deg2rad(45), scene.radius * 14, deg2rad(70), 0.35, 0.35, scene.radius])
+    const stepSeed = Float64Array.from([deg2rad(0.5), deg2rad(0.5), scene.radius * 0.02, deg2rad(0.5), 0.004, 0.004, 0.04])
+    const out: PoseCandidate[] = []
+    for (const seed of refitFrom) {
+      const refit = levenbergMarquardt(
+        (vec) => {
+          evaluations++
+          const p = fromVector(vec)
+          const view = viewFromParams(p, scene, imageWidth, imageHeight)
+          const rendered = renderPerspective(tris, view, size, scoreH)
+          return descriptorResidual(describeSilhouette(rendered.mask, opts.rays), refDescriptor, diagonal)
+        },
+        toVector(seed),
+        { maxIterations: Math.max(8, Math.round(opts.refineIterations / 2)), initialDamping: 1e-4, steps: stepSeed, lower: lowerSeed, upper: upperSeed, tolerance: 1e-5 },
+      )
+      out.push(evaluate(fromVector(refit.params)))
+    }
+    out.sort((a, b) => a.cost - b.cost)
+    return { candidates: out, evaluations, azimuthPrior, notes: ['cameras re-fitted from the previous poses'] }
   }
 
   // --- coarse grid -----------------------------------------------------

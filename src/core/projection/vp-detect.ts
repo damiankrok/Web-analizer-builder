@@ -249,6 +249,109 @@ function refineCandidate(
   }
 }
 
+export type LineFamilies = {
+  vertical: Segment[]
+  /** Near-horizontal segments sloping down-right and down-left. */
+  horizontalA: Segment[]
+  horizontalB: Segment[]
+  /** Genuinely oblique segments — roof pitches, ramps, diagonal glazing. */
+  oblique: Segment[]
+}
+
+/**
+ * Split segments by orientation. Used for diagnostics and for the debug UI;
+ * the solver itself does not rely on it, because an orientation split cannot
+ * separate a frontal facade from a receding one (see the module header).
+ */
+export function groupLineFamilies(
+  segments: readonly Segment[],
+  verticalTolRad = 0.26,
+  horizontalTolRad = 0.44,
+): LineFamilies {
+  const vertical: Segment[] = []
+  const horizontalA: Segment[] = []
+  const horizontalB: Segment[] = []
+  const oblique: Segment[] = []
+  for (const s of segments) {
+    if (orientationFromVertical(s.angle) <= verticalTolRad) {
+      vertical.push(s)
+      continue
+    }
+    const fromHorizontal = Math.min(s.angle, Math.PI - s.angle)
+    if (fromHorizontal <= horizontalTolRad) {
+      const slope = (s.y2 - s.y1) / (s.x2 - s.x1 || 1e-9)
+      if (slope >= 0) horizontalA.push(s)
+      else horizontalB.push(s)
+      continue
+    }
+    oblique.push(s)
+  }
+  return { vertical, horizontalA, horizontalB, oblique }
+}
+
+/**
+ * Fit one *known* family: choose between the parallel and convergent models on
+ * exactly these segments, with no inlier search. Use this when the family is
+ * already established (a vertical family, say); use detectVanishingPoints when
+ * the families themselves have to be discovered.
+ */
+export function fitVanishingPoint(
+  segments: readonly Segment[],
+  imageDiagonal: number,
+  opts: VpOptions = DEFAULT_VP,
+): VpCandidate {
+  const supportLength = segments.reduce((s, x) => s + x.length, 0)
+  const empty: VpCandidate = {
+    id: 'family',
+    model: 'UNDETERMINED',
+    point: [1, 0, 0],
+    finite: null,
+    sphere: [1, 0, 0],
+    inliers: [],
+    supportLength,
+    residualRad: Number.POSITIVE_INFINITY,
+    parallelResidualRad: Number.POSITIVE_INFINITY,
+    convergentResidualRad: Number.POSITIVE_INFINITY,
+    meanOrientation: 0,
+  }
+  if (segments.length < opts.minInliers || supportLength < opts.minSupportLength) return empty
+
+  const lines = segments.map(segmentLine)
+  const weights = segments.map((s) => s.length)
+  const indices = segments.map((_, i) => i)
+  const vConv = solveConvergent(lines, weights)
+  const vPar = solveParallel(lines, weights)
+  const convergentResidualRad = weightedRmsRad(segments, indices, vConv)
+  const parallelResidualRad = weightedRmsRad(segments, indices, vPar)
+
+  let finite: { u: number; v: number } | null = null
+  if (Math.abs(vConv[2]) > 1e-12) {
+    const u = vConv[0] / vConv[2]
+    const v = vConv[1] / vConv[2]
+    if (Number.isFinite(u) && Number.isFinite(v) && Math.hypot(u, v) < opts.infinityFactor * imageDiagonal) {
+      finite = { u, v }
+    }
+  }
+  const convergentWins =
+    finite !== null &&
+    convergentResidualRad < parallelResidualRad * opts.convergenceMargin &&
+    convergentResidualRad < opts.maxConvergentResidualRad
+
+  return {
+    id: 'family',
+    model: convergentWins ? 'CONVERGENT' : 'PARALLEL',
+    point: convergentWins ? vConv : vPar,
+    finite: convergentWins ? finite : null,
+    sphere: [0, 0, 0],
+    inliers: indices,
+    supportLength,
+    residualRad: convergentWins ? convergentResidualRad : parallelResidualRad,
+    parallelResidualRad,
+    convergentResidualRad,
+    meanOrientation: meanOrientationOf(segments, indices),
+  }
+}
+
 export function detectVanishingPoints(
   allSegments: readonly Segment[],
   width: number,

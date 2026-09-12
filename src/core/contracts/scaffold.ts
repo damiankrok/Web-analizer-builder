@@ -89,6 +89,10 @@ export type MetricScaffold = {
   ridgeY: number
   eaveY: number
   buildingHeightM: number
+  /** Terrain level relative to the ±0.00 finished floor; normally negative. */
+  plinthY: number
+  /** Exterior wall thickness measured off the section, metres. */
+  wallThicknessM: number
   plans: PlanAnalysis[]
   section: SectionAnalysis | null
   elevations: ElevationAnalysis[]

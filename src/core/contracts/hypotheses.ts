@@ -137,6 +137,10 @@ export type AppearanceFeature = {
 
 export type BuildingHypothesis = {
   id: string
+  /** Exterior wall thickness, needed to relate exterior masses to floor areas. */
+  wallThicknessM: number
+  /** Terrain level relative to the ±0.00 finished floor. */
+  plinthY: number
   /** Provenance chain: parent hypothesis id and the repair that produced this. */
   parentId?: string
   producedBy: string
@@ -148,6 +152,8 @@ export type BuildingHypothesis = {
   appearance: AppearanceFeature[]
   /** Hard metric constraints this hypothesis must keep satisfying (§38). */
   constraints: MetricConstraint[]
+  /** How the elements were arrived at, for the audit trail. */
+  notes: string[]
 }
 
 export type MetricConstraint = {

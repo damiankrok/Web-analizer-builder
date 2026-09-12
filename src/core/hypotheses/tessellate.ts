@@ -9,12 +9,13 @@
  *
  * PORT_DIRECT (Kotlin).
  */
-import type { BuildingHypothesis, MassHypothesis, RoofHypothesis } from '../contracts/hypotheses.js'
+import type { BuildingHypothesis } from '../contracts/hypotheses.js'
 import type { Vec2, Vec3 } from '../contracts/geometry.js'
 import { boundsOf } from '../contracts/geometry.js'
 import type { AnchorKind } from '../contracts/camera.js'
 import type { Edge3, Tri } from '../camera/render.js'
 import { facadeFrame } from './frames.js'
+import { buildSolidModel, type BuildPart, type BuildTri, type SolidModel } from './solid.js'
 
 export type Anchor3D = {
   id: string
@@ -27,169 +28,160 @@ export type Anchor3D = {
 }
 
 export type Tessellation = {
-  tris: Tri[]
+  tris: BuildTri[]
   edges: Edge3[]
   anchors: Anchor3D[]
+  /** Areas a takeoff would want, from the solid generation. */
+  quantities: SolidModel['quantities']
 }
 
 const v = (x: number, y: number, z: number): Vec3 => ({ x, y, z })
 
-function quad(a: Vec3, b: Vec3, c: Vec3, d: Vec3, ownerId: string): Tri[] {
+function quad(a: Vec3, b: Vec3, c: Vec3, d: Vec3, ownerId: string, part: BuildPart = 'FEATURE'): BuildTri[] {
   return [
-    { a, b, c, ownerId },
-    { a, b: c, c: d, ownerId },
+    { a, b, c, ownerId, part },
+    { a, b: c, c: d, ownerId, part },
   ]
 }
 
-/** Prism walls and a flat lid for a mass. */
-function massSolid(mass: MassHypothesis, topY: number): { tris: Tri[]; edges: Edge3[] } {
-  const ring = mass.footprint.outer
-  const tris: Tri[] = []
-  const edges: Edge3[] = []
-  for (let i = 0; i < ring.length; i++) {
-    const p = ring[i]
-    const q = ring[(i + 1) % ring.length]
-    const a = v(p.x, mass.baseY, p.z)
-    const b = v(q.x, mass.baseY, q.z)
-    const c = v(q.x, topY, q.z)
-    const d = v(p.x, topY, p.z)
-    tris.push(...quad(a, b, c, d, mass.id))
-    edges.push({ a, b: d, ownerId: mass.id, kind: 'MASS' })
-    edges.push({ a: d, b: c, ownerId: mass.id, kind: 'MASS' })
-    edges.push({ a, b, ownerId: mass.id, kind: 'MASS' })
+/** Geometry for the named architectural features (§19, §37). */
+function appearanceGeometry(
+  h: BuildingHypothesis,
+  bounds: ReturnType<typeof boundsOf>,
+  edges: Edge3[],
+  anchors: Anchor3D[],
+): BuildTri[] {
+  const tris: BuildTri[] = []
+  for (const f of h.appearance) {
+    switch (f.kind) {
+      case 'CHIMNEY': {
+        if (!f.world) break
+        const w = (f.widthM ?? 0.5) / 2
+        const d = w
+        const top = f.world.y + (f.heightM ?? 1)
+        const base = f.world.y - 0.4
+        const corners = [
+          { x: f.world.x - w, z: f.world.z - d },
+          { x: f.world.x + w, z: f.world.z - d },
+          { x: f.world.x + w, z: f.world.z + d },
+          { x: f.world.x - w, z: f.world.z + d },
+        ]
+        for (let i = 0; i < 4; i++) {
+          const p = corners[i]
+          const q = corners[(i + 1) % 4]
+          tris.push(...quad(v(p.x, base, p.z), v(q.x, base, q.z), v(q.x, top, q.z), v(p.x, top, p.z), f.id))
+          edges.push({ a: v(p.x, top, p.z), b: v(q.x, top, q.z), ownerId: f.id, kind: 'SILHOUETTE' })
+          edges.push({ a: v(p.x, base, p.z), b: v(p.x, top, p.z), ownerId: f.id, kind: 'SILHOUETTE' })
+        }
+        tris.push(
+          ...quad(
+            v(corners[0].x, top, corners[0].z),
+            v(corners[1].x, top, corners[1].z),
+            v(corners[2].x, top, corners[2].z),
+            v(corners[3].x, top, corners[3].z),
+            f.id,
+          ),
+        )
+        anchors.push({ id: `${f.id}_top`, kind: 'MASS_CORNER', world: v(f.world.x, top, f.world.z), ownerId: f.id, weight: 0.7 })
+        break
+      }
+      case 'BAND':
+      case 'PLINTH': {
+        if (!f.facade) break
+        const frame = facadeFrame(f.facade, bounds)
+        const s0 = f.s ?? 0
+        const s1 = s0 + (f.widthM ?? frame.widthM)
+        const t0 = f.t ?? 0
+        const t1 = t0 + (f.heightM ?? 0.25)
+        // A slab edge or render band projects a few centimetres, not a ledge.
+        const out = f.kind === 'PLINTH' ? 0.05 : 0.07
+        const pt = (s: number, t: number, o: number): Vec3 => ({
+          x: frame.origin.x + frame.right.x * s + frame.normal.x * o,
+          y: t,
+          z: frame.origin.z + frame.right.z * s + frame.normal.z * o,
+        })
+        const a0 = pt(s0, t0, out)
+        const a1 = pt(s1, t0, out)
+        const a2 = pt(s1, t1, out)
+        const a3 = pt(s0, t1, out)
+        const b0 = pt(s0, t0, 0)
+        const b1 = pt(s1, t0, 0)
+        const b2 = pt(s1, t1, 0)
+        const b3 = pt(s0, t1, 0)
+        tris.push(...quad(a0, a1, a2, a3, f.id))
+        tris.push(...quad(a3, a2, b2, b3, f.id))
+        tris.push(...quad(a0, a1, b1, b0, f.id))
+        edges.push({ a: a3, b: a2, ownerId: f.id, kind: 'MASS' })
+        edges.push({ a: a0, b: a1, ownerId: f.id, kind: 'MASS' })
+        break
+      }
+      case 'RAILING': {
+        if (!f.facade) break
+        const frame = facadeFrame(f.facade, bounds)
+        const s0 = f.s ?? 0
+        const s1 = s0 + (f.widthM ?? 2)
+        const t0 = f.t ?? 0
+        const t1 = t0 + (f.heightM ?? 1.05)
+        const out = 0.06
+        const pt = (s: number, t: number): Vec3 => ({
+          x: frame.origin.x + frame.right.x * s + frame.normal.x * out,
+          y: t,
+          z: frame.origin.z + frame.right.z * s + frame.normal.z * out,
+        })
+        // A glass balustrade: one thin panel plus its capping rail.
+        tris.push(...quad(pt(s0, t0), pt(s1, t0), pt(s1, t1), pt(s0, t1), `${f.id}_glass`, 'GLAZING'))
+        edges.push({ a: pt(s0, t1), b: pt(s1, t1), ownerId: f.id, kind: 'SILHOUETTE' })
+        edges.push({ a: pt(s0, t0), b: pt(s0, t1), ownerId: f.id, kind: 'OTHER' })
+        edges.push({ a: pt(s1, t0), b: pt(s1, t1), ownerId: f.id, kind: 'OTHER' })
+        break
+      }
+      case 'PORTAL':
+      case 'PIER': {
+        if (!f.facade) break
+        const frame = facadeFrame(f.facade, bounds)
+        const s0 = f.s ?? 0
+        const s1 = s0 + (f.widthM ?? 0.4)
+        const t0 = f.t ?? 0
+        const t1 = t0 + (f.heightM ?? 2.5)
+        const out = 0.16
+        const pt = (s: number, t: number, o: number): Vec3 => ({
+          x: frame.origin.x + frame.right.x * s + frame.normal.x * o,
+          y: t,
+          z: frame.origin.z + frame.right.z * s + frame.normal.z * o,
+        })
+        tris.push(...quad(pt(s0, t0, out), pt(s1, t0, out), pt(s1, t1, out), pt(s0, t1, out), f.id))
+        tris.push(...quad(pt(s0, t0, 0), pt(s0, t0, out), pt(s0, t1, out), pt(s0, t1, 0), f.id))
+        tris.push(...quad(pt(s1, t0, 0), pt(s1, t0, out), pt(s1, t1, out), pt(s1, t1, 0), f.id))
+        edges.push({ a: pt(s0, t0, out), b: pt(s0, t1, out), ownerId: f.id, kind: 'SILHOUETTE' })
+        edges.push({ a: pt(s1, t0, out), b: pt(s1, t1, out), ownerId: f.id, kind: 'SILHOUETTE' })
+        edges.push({ a: pt(s0, t1, out), b: pt(s1, t1, out), ownerId: f.id, kind: 'SILHOUETTE' })
+        break
+      }
+      default:
+        break
+    }
   }
-  // Lid, fan-triangulated about the first vertex. Footprints here are convex
-  // rectangles by construction, so a fan is sufficient.
-  for (let i = 1; i + 1 < ring.length; i++) {
-    tris.push({
-      a: v(ring[0].x, topY, ring[0].z),
-      b: v(ring[i].x, topY, ring[i].z),
-      c: v(ring[i + 1].x, topY, ring[i + 1].z),
-      ownerId: mass.id,
-    })
-  }
-  return { tris, edges }
+  return tris
 }
 
 /**
- * Gable roof over a rectangular mass: two pitched planes meeting at a ridge,
- * plus the two gable triangles that close the ends. Overhang extends the eaves
- * outwards along the slope and the ridge beyond the gable walls.
+ * Build the model and the semantic anchors together.
+ *
+ * The solid generator produces the geometry; anchors are derived from the
+ * hypothesis rather than from that geometry, so a camera is fitted to named
+ * architectural points — ridge ends, mass corners, opening centroids — and not
+ * to whichever triangle happened to be emitted.
  */
-function gableRoof(
-  mass: MassHypothesis,
-  roof: RoofHypothesis,
-): { tris: Tri[]; edges: Edge3[]; anchors: Anchor3D[] } {
-  const b = boundsOf(mass.footprint.outer)
-  const alongZ = (roof.ridgeDir?.z ?? 1) !== 0
-  const oh = roof.overhangM
-  const tris: Tri[] = []
-  const edges: Edge3[] = []
-  const anchors: Anchor3D[] = []
-
-  const eaveY = roof.eaveY
-  const ridgeY = roof.ridgeY
-  // Overhang drops below the eave line along the pitch.
-  const drop = oh * Math.tan((roof.pitchDeg * Math.PI) / 180)
-
-  if (alongZ) {
-    const midX = (b.minX + b.maxX) / 2
-    const z0 = b.minZ - oh
-    const z1 = b.maxZ + oh
-    const xL = b.minX - oh
-    const xR = b.maxX + oh
-    const ridgeA = v(midX, ridgeY, z0)
-    const ridgeB = v(midX, ridgeY, z1)
-    const eaveLA = v(xL, eaveY - drop, z0)
-    const eaveLB = v(xL, eaveY - drop, z1)
-    const eaveRA = v(xR, eaveY - drop, z0)
-    const eaveRB = v(xR, eaveY - drop, z1)
-    tris.push(...quad(ridgeA, ridgeB, eaveLB, eaveLA, roof.id))
-    tris.push(...quad(ridgeA, ridgeB, eaveRB, eaveRA, roof.id))
-    // Gable triangles close the ends so the silhouette is solid.
-    tris.push({ a: v(b.minX, eaveY, b.minZ), b: v(b.maxX, eaveY, b.minZ), c: v(midX, ridgeY, b.minZ), ownerId: roof.id })
-    tris.push({ a: v(b.minX, eaveY, b.maxZ), b: v(b.maxX, eaveY, b.maxZ), c: v(midX, ridgeY, b.maxZ), ownerId: roof.id })
-    edges.push({ a: ridgeA, b: ridgeB, ownerId: roof.id, kind: 'ROOFLINE' })
-    edges.push({ a: eaveLA, b: eaveLB, ownerId: roof.id, kind: 'ROOFLINE' })
-    edges.push({ a: eaveRA, b: eaveRB, ownerId: roof.id, kind: 'ROOFLINE' })
-    edges.push({ a: ridgeA, b: eaveLA, ownerId: roof.id, kind: 'SILHOUETTE' })
-    edges.push({ a: ridgeA, b: eaveRA, ownerId: roof.id, kind: 'SILHOUETTE' })
-    edges.push({ a: ridgeB, b: eaveLB, ownerId: roof.id, kind: 'SILHOUETTE' })
-    edges.push({ a: ridgeB, b: eaveRB, ownerId: roof.id, kind: 'SILHOUETTE' })
-    anchors.push(
-      { id: `${roof.id}_ridge_a`, kind: 'RIDGE_END', world: ridgeA, ownerId: roof.id, weight: 1 },
-      { id: `${roof.id}_ridge_b`, kind: 'RIDGE_END', world: ridgeB, ownerId: roof.id, weight: 1 },
-      { id: `${roof.id}_eave_la`, kind: 'EAVE_END', world: eaveLA, ownerId: roof.id, weight: 0.9 },
-      { id: `${roof.id}_eave_lb`, kind: 'EAVE_END', world: eaveLB, ownerId: roof.id, weight: 0.9 },
-      { id: `${roof.id}_eave_ra`, kind: 'EAVE_END', world: eaveRA, ownerId: roof.id, weight: 0.9 },
-      { id: `${roof.id}_eave_rb`, kind: 'EAVE_END', world: eaveRB, ownerId: roof.id, weight: 0.9 },
-    )
-  } else {
-    const midZ = (b.minZ + b.maxZ) / 2
-    const x0 = b.minX - oh
-    const x1 = b.maxX + oh
-    const zL = b.minZ - oh
-    const zR = b.maxZ + oh
-    const ridgeA = v(x0, ridgeY, midZ)
-    const ridgeB = v(x1, ridgeY, midZ)
-    const eaveLA = v(x0, eaveY - drop, zL)
-    const eaveLB = v(x1, eaveY - drop, zL)
-    const eaveRA = v(x0, eaveY - drop, zR)
-    const eaveRB = v(x1, eaveY - drop, zR)
-    tris.push(...quad(ridgeA, ridgeB, eaveLB, eaveLA, roof.id))
-    tris.push(...quad(ridgeA, ridgeB, eaveRB, eaveRA, roof.id))
-    tris.push({ a: v(b.minX, eaveY, b.minZ), b: v(b.minX, eaveY, b.maxZ), c: v(b.minX, ridgeY, midZ), ownerId: roof.id })
-    tris.push({ a: v(b.maxX, eaveY, b.minZ), b: v(b.maxX, eaveY, b.maxZ), c: v(b.maxX, ridgeY, midZ), ownerId: roof.id })
-    edges.push({ a: ridgeA, b: ridgeB, ownerId: roof.id, kind: 'ROOFLINE' })
-    edges.push({ a: eaveLA, b: eaveLB, ownerId: roof.id, kind: 'ROOFLINE' })
-    edges.push({ a: eaveRA, b: eaveRB, ownerId: roof.id, kind: 'ROOFLINE' })
-    anchors.push(
-      { id: `${roof.id}_ridge_a`, kind: 'RIDGE_END', world: ridgeA, ownerId: roof.id, weight: 1 },
-      { id: `${roof.id}_ridge_b`, kind: 'RIDGE_END', world: ridgeB, ownerId: roof.id, weight: 1 },
-      { id: `${roof.id}_eave_la`, kind: 'EAVE_END', world: eaveLA, ownerId: roof.id, weight: 0.9 },
-      { id: `${roof.id}_eave_rb`, kind: 'EAVE_END', world: eaveRB, ownerId: roof.id, weight: 0.9 },
-    )
-  }
-  return { tris, edges, anchors }
-}
-
-function flatRoof(mass: MassHypothesis, roof: RoofHypothesis): { tris: Tri[]; edges: Edge3[]; anchors: Anchor3D[] } {
-  const b = boundsOf(mass.footprint.outer)
-  const oh = roof.overhangM
-  const y = roof.ridgeY
-  const corners = [
-    v(b.minX - oh, y, b.minZ - oh),
-    v(b.maxX + oh, y, b.minZ - oh),
-    v(b.maxX + oh, y, b.maxZ + oh),
-    v(b.minX - oh, y, b.maxZ + oh),
-  ]
-  const tris = quad(corners[0], corners[1], corners[2], corners[3], roof.id)
-  const edges: Edge3[] = []
-  for (let i = 0; i < 4; i++) {
-    edges.push({ a: corners[i], b: corners[(i + 1) % 4], ownerId: roof.id, kind: 'ROOFLINE' })
-  }
-  const anchors: Anchor3D[] = corners.map((c, i) => ({
-    id: `${roof.id}_corner_${i}`,
-    kind: 'MASS_CORNER',
-    world: c,
-    ownerId: roof.id,
-    weight: 0.95,
-  }))
-  return { tris, edges, anchors }
-}
-
 export function tessellate(h: BuildingHypothesis): Tessellation {
-  const tris: Tri[] = []
-  const edges: Edge3[] = []
+  const model = buildSolidModel(h)
+  const tris = model.tris
+  const edges = model.edges
   const anchors: Anchor3D[] = []
+  const bounds = boundsOf(h.masses.flatMap((m) => m.footprint.outer))
 
   for (const mass of h.masses) {
     const roof = h.roofs.find((r) => r.massId === mass.id)
-    const topY = roof && roof.kind !== 'FLAT' ? roof.eaveY : (roof?.ridgeY ?? mass.topY)
-    const solid = massSolid(mass, topY)
-    tris.push(...solid.tris)
-    edges.push(...solid.edges)
-
+    const topY = roof && roof.kind !== 'FLAT' && roof.kind !== 'NONE' ? roof.eaveY : (roof?.ridgeY ?? mass.topY)
     const ring = mass.footprint.outer
     for (let i = 0; i < ring.length; i++) {
       anchors.push({
@@ -207,51 +199,56 @@ export function tessellate(h: BuildingHypothesis): Tessellation {
         weight: 0.7,
       })
     }
-
-    if (!roof) continue
-    const built =
-      roof.kind === 'FLAT' || roof.kind === 'NONE' ? flatRoof(mass, roof) : gableRoof(mass, roof)
-    tris.push(...built.tris)
-    edges.push(...built.edges)
-    anchors.push(...built.anchors)
+    if (!roof || roof.kind === 'FLAT' || roof.kind === 'NONE' || roof.pitchDeg <= 0) continue
+    const b = boundsOf(ring)
+    const alongZ = (roof.ridgeDir?.z ?? 1) !== 0
+    const oh = roof.overhangM
+    const drop = oh * Math.tan((roof.pitchDeg * Math.PI) / 180)
+    if (alongZ) {
+      const midX = (b.minX + b.maxX) / 2
+      anchors.push(
+        { id: `${roof.id}_ridge_a`, kind: 'RIDGE_END', world: v(midX, roof.ridgeY, b.minZ - oh), ownerId: roof.id, weight: 1 },
+        { id: `${roof.id}_ridge_b`, kind: 'RIDGE_END', world: v(midX, roof.ridgeY, b.maxZ + oh), ownerId: roof.id, weight: 1 },
+        { id: `${roof.id}_eave_la`, kind: 'EAVE_END', world: v(b.minX - oh, roof.eaveY - drop, b.minZ - oh), ownerId: roof.id, weight: 0.9 },
+        { id: `${roof.id}_eave_lb`, kind: 'EAVE_END', world: v(b.minX - oh, roof.eaveY - drop, b.maxZ + oh), ownerId: roof.id, weight: 0.9 },
+        { id: `${roof.id}_eave_ra`, kind: 'EAVE_END', world: v(b.maxX + oh, roof.eaveY - drop, b.minZ - oh), ownerId: roof.id, weight: 0.9 },
+        { id: `${roof.id}_eave_rb`, kind: 'EAVE_END', world: v(b.maxX + oh, roof.eaveY - drop, b.maxZ + oh), ownerId: roof.id, weight: 0.9 },
+      )
+    } else {
+      const midZ = (b.minZ + b.maxZ) / 2
+      anchors.push(
+        { id: `${roof.id}_ridge_a`, kind: 'RIDGE_END', world: v(b.minX - oh, roof.ridgeY, midZ), ownerId: roof.id, weight: 1 },
+        { id: `${roof.id}_ridge_b`, kind: 'RIDGE_END', world: v(b.maxX + oh, roof.ridgeY, midZ), ownerId: roof.id, weight: 1 },
+        { id: `${roof.id}_eave_la`, kind: 'EAVE_END', world: v(b.minX - oh, roof.eaveY - drop, b.minZ - oh), ownerId: roof.id, weight: 0.9 },
+        { id: `${roof.id}_eave_rb`, kind: 'EAVE_END', world: v(b.maxX + oh, roof.eaveY - drop, b.maxZ + oh), ownerId: roof.id, weight: 0.9 },
+      )
+    }
   }
 
-  // Opening groups: outer rectangle on its facade, as edges and corner anchors.
-  const bounds = boundsOf(h.masses.flatMap((m) => m.footprint.outer))
   for (const g of h.openingGroups) {
-    const mass = h.masses.find((m) => m.id === g.massId)
-    const mb = mass ? boundsOf(mass.footprint.outer) : bounds
     const frame = facadeFrame(g.facade, bounds)
-    const outward = 0.02
     const corner = (s: number, t: number): Vec3 => ({
-      x: frame.origin.x + frame.right.x * s + frame.normal.x * outward,
+      x: frame.origin.x + frame.right.x * s,
       y: t,
-      z: frame.origin.z + frame.right.z * s + frame.normal.z * outward,
+      z: frame.origin.z + frame.right.z * s,
     })
     const c0 = corner(g.s, g.sillY)
-    const c1 = corner(g.s + g.widthM, g.sillY)
     const c2 = corner(g.s + g.widthM, g.sillY + g.heightM)
-    const c3 = corner(g.s, g.sillY + g.heightM)
-    edges.push(
-      { a: c0, b: c1, ownerId: g.id, kind: 'OPENING' },
-      { a: c1, b: c2, ownerId: g.id, kind: 'OPENING' },
-      { a: c2, b: c3, ownerId: g.id, kind: 'OPENING' },
-      { a: c3, b: c0, ownerId: g.id, kind: 'OPENING' },
-    )
-    const centroid: Vec3 = {
-      x: (c0.x + c2.x) / 2,
-      y: (c0.y + c2.y) / 2,
-      z: (c0.z + c2.z) / 2,
-    }
-    anchors.push({ id: `${g.id}_centroid`, kind: 'OPENING_GROUP_CENTROID', world: centroid, ownerId: g.id, weight: 0.8 })
+    anchors.push({
+      id: `${g.id}_centroid`,
+      kind: 'OPENING_GROUP_CENTROID',
+      world: { x: (c0.x + c2.x) / 2, y: (c0.y + c2.y) / 2, z: (c0.z + c2.z) / 2 },
+      ownerId: g.id,
+      weight: 0.8,
+    })
     anchors.push({ id: `${g.id}_c0`, kind: 'OPENING_GROUP_CORNER', world: c0, ownerId: g.id, weight: 0.6 })
     anchors.push({ id: `${g.id}_c2`, kind: 'OPENING_GROUP_CORNER', world: c2, ownerId: g.id, weight: 0.6 })
-    void mb
   }
 
-  // Deterministic ordering keeps rendering and scoring byte-stable.
+  tris.push(...appearanceGeometry(h, bounds, edges, anchors))
+
   anchors.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-  return { tris, edges, anchors }
+  return { tris, edges, anchors, quantities: model.quantities }
 }
 
 /** Axis-aligned world bounds of a tessellation, used to frame default cameras. */

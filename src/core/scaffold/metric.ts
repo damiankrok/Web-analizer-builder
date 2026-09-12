@@ -43,6 +43,8 @@ export type ScaffoldInputs = {
   sectionSpansM: number[]
   /** Span the pitched roof covers, from the section's ridge symmetry. */
   gableSpanM: number | null
+  /** Wall thicknesses measured between wall-face pairs in the section. */
+  wallThicknessesM: number[]
   plans: PlanAnalysis[]
   elevations: ElevationAnalysis[]
   footprint: Polygon2D | null
@@ -203,6 +205,13 @@ export function assembleScaffold(inputs: ScaffoldInputs): ScaffoldResult {
     }
   }
 
+  // Wall thickness: the small spans in the section are wall faces bracketing a
+  // wall, not rooms. It is needed to relate a mass's exterior footprint to the
+  // interior floor areas the page publishes.
+  const thin = inputs.wallThicknessesM.filter((t) => t > 0.15 && t < 0.8).sort((a, b) => a - b)
+  const wallThickness = thin.length > 0 ? thin[Math.floor(thin.length / 2)] : 0.4
+  if (thin.length === 0) notes.push('no wall thickness measurable in the section; assuming 0.40 m')
+
   let confidence = 0.2
   if (inputs.section && inputs.section.confidence > 0.5) confidence += 0.3
   if (footprintAreaM2 > 0) confidence += 0.2
@@ -221,6 +230,8 @@ export function assembleScaffold(inputs: ScaffoldInputs): ScaffoldResult {
     ridgeY: ridgeY ?? 0,
     eaveY: eaveY ?? 0,
     buildingHeightM: heightM ?? ridgeY ?? 0,
+    plinthY: plinth ?? 0,
+    wallThicknessM: wallThickness,
     plans: inputs.plans,
     section: inputs.section,
     elevations: inputs.elevations,
