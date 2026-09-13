@@ -178,3 +178,85 @@ export function meshBounds(tris: readonly OTri[]): {
   }
   return { min, max, size: { x: max.x - min.x, y: max.y - min.y, z: max.z - min.z } }
 }
+
+// --------------------------------------------------------------------------
+// Solid intervals along a line. Added for STAGE WEB-PIVOT-01B.
+//
+// Volume alone cannot tell a corner that is counted twice from a corner with a
+// gap beside it: one adds what the other takes away. What distinguishes them is
+// *where* the material is, so these read the material out along a line and
+// compare it to an interval set stated in metres.
+//
+// The comparison is exact arithmetic on entry and exit distances, not point
+// sampling: a 0.45 m slab is 0.45 m of interval or the test fails, and a
+// hairline gap of a micrometre is a visible discrepancy rather than a sample
+// that happened to land in the right place.
+// --------------------------------------------------------------------------
+
+/** A run of solid material along a ray, in metres from the ray origin. */
+export type Interval = { t0: number; t1: number }
+
+const norm = (v: OVec): OVec => {
+  const l = Math.hypot(v.x, v.y, v.z)
+  return { x: v.x / l, y: v.y / l, z: v.z / l }
+}
+
+/**
+ * The runs of material a ray passes through inside one closed mesh.
+ *
+ * A ray that starts outside a closed surface alternates in, out, in, out, so
+ * distinct crossings pair up into intervals. Coincident crossings are collapsed
+ * first: a ray down the diagonal two triangles share is reported by both, and a
+ * quad met once must not count as a surface met twice.
+ *
+ * The direction is normalised, so `t` is a distance in metres and interval
+ * lengths are thicknesses. Throws rather than guessing if the crossing count is
+ * odd — that means the mesh was not closed along this line, which is a fact the
+ * caller needs rather than an interval list to be interpreted.
+ */
+export function rayIntervals(
+  tris: readonly OTri[],
+  origin: OVec,
+  direction: OVec,
+  tolerance = 1e-9,
+): Interval[] {
+  const dir = norm(direction)
+  const hits = rayHits(tris, origin, dir)
+  const ts: number[] = []
+  for (const h of hits) {
+    if (ts.length === 0 || h.t - ts[ts.length - 1] > tolerance) ts.push(h.t)
+  }
+  if (ts.length % 2 !== 0) {
+    throw new Error(
+      `ray from (${origin.x}, ${origin.y}, ${origin.z}) crossed ${ts.length} surfaces: ` +
+        'an odd count means the mesh is not closed along this line',
+    )
+  }
+  const out: Interval[] = []
+  for (let i = 0; i < ts.length; i += 2) out.push({ t0: ts[i], t1: ts[i + 1] })
+  return out
+}
+
+/** Total length of positive overlap between two interval lists. Zero means contact at most. */
+export function intervalsOverlapLength(p: readonly Interval[], q: readonly Interval[]): number {
+  let total = 0
+  for (const x of p) {
+    for (const y of q) total += Math.max(0, Math.min(x.t1, y.t1) - Math.max(x.t0, y.t0))
+  }
+  return total
+}
+
+/** Merge touching and overlapping intervals into a canonical sorted list. */
+export function mergeIntervals(list: readonly Interval[], tolerance = 1e-9): Interval[] {
+  const sorted = [...list].sort((a, b) => a.t0 - b.t0)
+  const out: Interval[] = []
+  for (const x of sorted) {
+    const last = out[out.length - 1]
+    if (last && x.t0 - last.t1 <= tolerance) last.t1 = Math.max(last.t1, x.t1)
+    else out.push({ ...x })
+  }
+  return out
+}
+
+export const intervalsLength = (list: readonly Interval[]): number =>
+  list.reduce((acc, i) => acc + (i.t1 - i.t0), 0)

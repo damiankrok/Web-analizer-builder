@@ -143,6 +143,17 @@ export type CompiledTri = {
   wallId: string
   /** Set on reveal and glazing triangles. */
   openingId?: string
+  /**
+   * Set when this face is in contact with another wall rather than exposed.
+   *
+   * A butt junction leaves the trimmed wall's new end face pressed flat against
+   * the owner's material. It is a real face of a closed solid — the mesh would
+   * not be watertight without it — but it is not fabric anyone can see, and an
+   * exposed-area measure that counted it would overstate the facade by one wall
+   * section per corner. The value is the junction's id, so the contact can be
+   * traced back to the record that created it.
+   */
+  contactId?: string
 }
 
 export type WallDiagnosticCode =
@@ -158,6 +169,8 @@ export type WallDiagnosticCode =
   | 'OVERLAPPING_OPENINGS'
   | 'UNKNOWN_GLAZING_OPENING'
   | 'GLAZING_OUTSIDE_THICKNESS'
+  | 'INVALID_WALL_EXTENT'
+  | 'OPENING_IN_TRIMMED_ZONE'
 
 export type WallDiagnostic = {
   code: WallDiagnosticCode
@@ -175,6 +188,36 @@ export type CompiledWall = {
   /** Openings that were cut, in input order. */
   openingIds: string[]
   triCount: number
+}
+
+/**
+ * The span of a wall's own length that is actually emitted.
+ *
+ * A wall's `lengthM` is its **nominal** extent and never changes: it is what the
+ * drawing says, it is what openings are measured against, and it is an input
+ * that no compiler is allowed to rewrite. But where two walls butt at a corner,
+ * one of them must stop short so the corner material is emitted once rather
+ * than twice. That shortening is a property of the *compilation*, not of the
+ * wall, so it lives here and nowhere near `WallSpec`.
+ *
+ * `a0` and `a1` are in the wall's own `u` coordinate, on the same axis as
+ * `OpeningSpec.offsetM`. Absent, a wall compiles over its full `0..lengthM`,
+ * which is exactly what STAGE WEB-PIVOT-01 does — an extent of `{a0: 0, a1:
+ * lengthM}` is not a special case, it is the default written down.
+ *
+ * Because the interval is stated in the *original* coordinate, an opening keeps
+ * the offset it was given. Nothing is renormalised: an opening at 1.5 m is at
+ * 1.5 m whether the wall's first 0.45 m is emitted or not.
+ */
+export type WallExtent = {
+  /** First emitted position along `u`. */
+  a0: number
+  /** Last emitted position along `u`. */
+  a1: number
+  /** Contact id for the end face at `a0`, when that end abuts another wall. */
+  a0ContactId?: string
+  /** Contact id for the end face at `a1`, when that end abuts another wall. */
+  a1ContactId?: string
 }
 
 export type CompileResult = {

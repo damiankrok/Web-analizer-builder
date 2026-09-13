@@ -50,6 +50,7 @@ import type {
   OpeningSpec,
   WallCompileInput,
   WallDiagnostic,
+  WallExtent,
   WallPart,
   WallSpec,
 } from './contracts.js'
@@ -82,9 +83,10 @@ function quad(
   ownerId: string,
   wallId: string,
   openingId?: string,
+  contactId?: string,
 ): void {
-  out.push({ a: p0, b: p1, c: p2, part, ownerId, wallId, openingId })
-  out.push({ a: p0, b: p2, c: p3, part, ownerId, wallId, openingId })
+  out.push({ a: p0, b: p1, c: p2, part, ownerId, wallId, openingId, contactId })
+  out.push({ a: p0, b: p2, c: p3, part, ownerId, wallId, openingId, contactId })
 }
 
 /** Sorted unique break values spanning `lo..hi`. */
@@ -104,8 +106,15 @@ const midInside = (r: LocalRect, a: number, b: number): boolean =>
 const rectsOverlap = (p: LocalRect, q: LocalRect): boolean =>
   p.a0 < q.a1 - BREAK_EPS && q.a0 < p.a1 - BREAK_EPS && p.b0 < q.b1 - BREAK_EPS && q.b0 < p.b1 - BREAK_EPS
 
-/** Validate a wall. Returns the reasons it cannot be compiled, if any. */
-function checkWall(w: WallSpec): WallDiagnostic[] {
+/**
+ * Validate a wall. Returns the reasons it cannot be compiled, if any.
+ *
+ * Exported because the junction layer has to know whether a wall is well formed
+ * *before* it does any corner arithmetic on its axes: running the exterior-corner
+ * test on a wall whose `u` is not a unit vector produces a confident answer to a
+ * meaningless question, and two diagnostics where one would do.
+ */
+export function checkWall(w: WallSpec): WallDiagnostic[] {
   const out: WallDiagnostic[] = []
   const bad = (field: string, value: number): void => {
     out.push({
@@ -136,7 +145,7 @@ function checkWall(w: WallSpec): WallDiagnostic[] {
 }
 
 /** Validate one opening against its host. Returns the reasons it is rejected. */
-function checkOpening(o: OpeningSpec, host: WallSpec): WallDiagnostic[] {
+function checkOpening(o: OpeningSpec, host: WallSpec, extent: WallExtent): WallDiagnostic[] {
   const out: WallDiagnostic[] = []
   const bad = (field: string, value: number): void => {
     out.push({
@@ -182,20 +191,68 @@ function checkOpening(o: OpeningSpec, host: WallSpec): WallDiagnostic[] {
       wallId: host.id,
       openingId: o.id,
     })
+    return out
+  }
+  // The opening is inside the wall the drawing describes. It may still be
+  // inside the part of it a junction took away, and that is refused rather than
+  // repaired: moving the opening would put a window somewhere nobody asked for,
+  // and clipping it would emit a reveal face onto a plane that is buried inside
+  // the neighbouring wall. Both are worse than saying so.
+  if (a0 <= extent.a0 + BREAK_EPS || a1 >= extent.a1 - BREAK_EPS) {
+    out.push({
+      code: 'OPENING_IN_TRIMMED_ZONE',
+      severity: 'ERROR',
+      message:
+        `opening ${o.id} spans ${a0}..${a1} along wall ${host.id}, which is compiled only over ` +
+        `${extent.a0}..${extent.a1} because a junction gave the rest of it to another wall; ` +
+        'the opening is not moved and not clipped',
+      wallId: host.id,
+      openingId: o.id,
+    })
   }
   return out
 }
 
-/** Compile one wall and the openings already validated against it. */
+/** The whole wall — the extent every wall has unless a junction says otherwise. */
+const fullExtent = (w: WallSpec): WallExtent => ({ a0: 0, a1: w.lengthM })
+
+/** Validate a compiled extent against the wall it belongs to. */
+function checkExtent(w: WallSpec, e: WallExtent): WallDiagnostic[] {
+  const out: WallDiagnostic[] = []
+  const bad = (why: string): void => {
+    out.push({
+      code: 'INVALID_WALL_EXTENT',
+      severity: 'ERROR',
+      message: `wall ${w.id}: compiled extent ${e.a0}..${e.a1} ${why} (nominal length ${w.lengthM} m)`,
+      wallId: w.id,
+    })
+  }
+  if (!Number.isFinite(e.a0) || !Number.isFinite(e.a1)) bad('is not finite')
+  else if (e.a1 - e.a0 <= BREAK_EPS) bad('is empty or inverted')
+  else if (e.a0 < -BREAK_EPS || e.a1 > w.lengthM + BREAK_EPS) bad('reaches outside the wall')
+  return out
+}
+
+/**
+ * Compile one wall and the openings already validated against it.
+ *
+ * `extent` is the span of the wall's own `u` coordinate that is emitted. It
+ * replaces the literal `0` and `lengthM` that used to bound the tiling, and
+ * nothing else changes: the grid, the winding and the vertex function are the
+ * ones STAGE WEB-PIVOT-01 proved. A wall with the default full extent therefore
+ * compiles to exactly the triangles it did before junctions existed.
+ */
 function compileWall(
   w: WallSpec,
+  extent: WallExtent,
   openings: readonly OpeningSpec[],
   glazingFor: ReadonlyMap<string, GlazingSpec>,
   out: CompiledTri[],
 ): void {
   const P = (a: number, b: number, c: number): Vec3 => wallPoint(w, a, b, c)
   const T = w.thicknessM
-  const L = w.lengthM
+  const A0 = extent.a0
+  const A1 = extent.a1
   const H = w.heightM
 
   const holes: LocalRect[] = openings.map((o) => ({
@@ -204,7 +261,7 @@ function compileWall(
     b0: o.sillM,
     b1: o.sillM + o.heightM,
   }))
-  const aBreaks = breaks(0, L, holes.flatMap((h) => [h.a0, h.a1]))
+  const aBreaks = breaks(A0, A1, holes.flatMap((h) => [h.a0, h.a1]))
   const bBreaks = breaks(0, H, holes.flatMap((h) => [h.b0, h.b1]))
 
   // Outer face, c = 0, outward +n. Inner face, c = T, outward -n.
@@ -222,12 +279,14 @@ function compileWall(
     }
   }
 
-  // Ends, split on the height breaks so they meet the faces edge to edge.
+  // Ends, split on the height breaks so they meet the faces edge to edge. An end
+  // cut back by a junction is still a face of the closed solid; it just carries
+  // the junction's id so a caller can tell it apart from exposed fabric.
   for (let j = 0; j + 1 < bBreaks.length; j++) {
     const b0 = bBreaks[j]
     const b1 = bBreaks[j + 1]
-    quad(out, P(0, b0, 0), P(0, b1, 0), P(0, b1, T), P(0, b0, T), 'WALL', w.id, w.id) // -u
-    quad(out, P(L, b0, 0), P(L, b0, T), P(L, b1, T), P(L, b1, 0), 'WALL', w.id, w.id) // +u
+    quad(out, P(A0, b0, 0), P(A0, b1, 0), P(A0, b1, T), P(A0, b0, T), 'WALL', w.id, w.id, undefined, extent.a0ContactId) // -u
+    quad(out, P(A1, b0, 0), P(A1, b0, T), P(A1, b1, T), P(A1, b1, 0), 'WALL', w.id, w.id, undefined, extent.a1ContactId) // +u
   }
 
   // Bottom and top, split on the length breaks for the same reason.
@@ -263,11 +322,20 @@ function compileWall(
  * The input is never mutated; the result is built from scratch. Given the same
  * input the output is identical, element for element and float for float —
  * there is no iteration over a hash map, no clock and no randomness.
+ *
+ * `extents` is optional and is how STAGE WEB-PIVOT-01B trims a wall at a
+ * junction without touching a single input record. Omit it and every wall
+ * compiles over its full nominal length, which is what every caller before that
+ * stage does.
  */
-export function compileWalls(input: WallCompileInput): CompileResult {
+export function compileWalls(
+  input: WallCompileInput,
+  extents?: ReadonlyMap<string, WallExtent>,
+): CompileResult {
   const diagnostics: WallDiagnostic[] = []
   const tris: CompiledTri[] = []
   const compiled: CompiledWall[] = []
+  const extentOf = new Map<string, WallExtent>()
 
   // Walls, by id. A duplicate id is an error for the *second* wall: the first
   // keeps the name it was given, so openings hosted by it still compile.
@@ -289,6 +357,13 @@ export function compileWalls(input: WallCompileInput): CompileResult {
       diagnostics.push(...problems)
       continue
     }
+    const extent = extents?.get(w.id) ?? fullExtent(w)
+    const extentProblems = checkExtent(w, extent)
+    if (extentProblems.length > 0) {
+      diagnostics.push(...extentProblems)
+      continue
+    }
+    extentOf.set(w.id, extent)
     usable.push(w)
   }
 
@@ -318,7 +393,7 @@ export function compileWalls(input: WallCompileInput): CompileResult {
       continue
     }
     if (!usable.includes(host)) continue // the host's own diagnostic already says why
-    const problems = checkOpening(o, host)
+    const problems = checkOpening(o, host, extentOf.get(host.id)!)
     if (problems.length > 0) {
       diagnostics.push(...problems)
       continue
@@ -395,7 +470,7 @@ export function compileWalls(input: WallCompileInput): CompileResult {
   for (const w of usable) {
     const openings = accepted.get(w.id) ?? []
     const before = tris.length
-    compileWall(w, openings, glazingFor, tris)
+    compileWall(w, extentOf.get(w.id)!, openings, glazingFor, tris)
     compiled.push({ wallId: w.id, openingIds: openings.map((o) => o.id), triCount: tris.length - before })
   }
 
