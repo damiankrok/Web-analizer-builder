@@ -15,7 +15,8 @@ same hashes and the same byte counts as the one already published.
 | --- | --- |
 | Branch | `claude/new-session-pvd4ik` |
 | Starting HEAD | `b31edd30bf8e2c5eb40d991d294f109d0d46b8d4` |
-| Final HEAD | recorded in the follow-up commit below — a commit cannot name its own hash |
+| Stage commit | `d4a0eff9d61a5824c8984cf1b01214372a9c1951` |
+| Final HEAD | this commit — it changes only this line, so every gate above still describes the tree of `d4a0eff` |
 | Working tree at start | clean — `git status --short` empty |
 
 `git log --oneline --decorate -8` at the start showed `b31edd3` and `b6f0ed9`
