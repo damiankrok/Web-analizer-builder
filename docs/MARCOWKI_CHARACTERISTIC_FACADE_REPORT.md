@@ -43,7 +43,8 @@ plans carry both returns.
 | starting HEAD | `a5bf0931d98fa7b97abab4c59c41a1113b9861a3` |
 | branch | `claude/new-session-pvd4ik` |
 | working tree at start | clean apart from the STAGE WEB-PIVOT-05 work in progress described here |
-| final HEAD | recorded in §21 |
+| implementation commit | `05d2247e` — *STAGE WEB-PIVOT-05: the Marcowki characteristic facade* |
+| final HEAD | the commit that adds this line, recorded below |
 
 No unknown OWNER change was present, so `BLOCKED_STAGE_WEB_PIVOT_05_UNSAFE_BASELINE`
 did not apply. Nothing was stashed, reset or cleaned.
