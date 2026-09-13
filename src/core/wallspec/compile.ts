@@ -44,6 +44,7 @@
 import type { Vec3 } from '../contracts/geometry.js'
 import type {
   CompiledTri,
+  ContactKind,
   CompiledWall,
   CompileResult,
   GlazingSpec,
@@ -53,14 +54,22 @@ import type {
   WallExtent,
   WallPart,
   WallSpec,
-  WallTopProfile,
 } from './contracts.js'
-import { wallPoint } from './contracts.js'
+import { wallFrame, wallPoint } from './contracts.js'
 
 /** Below this, two break values are the same value. */
 const BREAK_EPS = 1e-9
 /** Axis unit-length and perpendicularity tolerance. */
 const AXIS_EPS = 1e-9
+/**
+ * Below this, a top plane is too near parallel to the wall's `up` to intersect.
+ *
+ * `up` is unit length and the normal is normalised before the test, so this is
+ * the sine of the angle between the plane and the wall's horizontal — a soffit
+ * within about 6e-6 degrees of vertical. Anything flatter than that is a
+ * modelling error, not a steep roof.
+ */
+const PLANE_EPS = 1e-7
 
 const dot = (a: Vec3, b: Vec3): number => a.x * b.x + a.y * b.y + a.z * b.z
 const len = (a: Vec3): number => Math.hypot(a.x, a.y, a.z)
@@ -85,9 +94,10 @@ function quad(
   wallId: string,
   openingId?: string,
   contactId?: string,
+  contactKind?: ContactKind,
 ): void {
-  out.push({ a: p0, b: p1, c: p2, part, ownerId, wallId, openingId, contactId })
-  out.push({ a: p0, b: p2, c: p3, part, ownerId, wallId, openingId, contactId })
+  out.push({ a: p0, b: p1, c: p2, part, ownerId, wallId, openingId, contactId, contactKind })
+  out.push({ a: p0, b: p2, c: p3, part, ownerId, wallId, openingId, contactId, contactKind })
 }
 
 /** Sorted unique break values spanning `lo..hi`. */
@@ -129,8 +139,9 @@ export function checkWall(w: WallSpec): WallDiagnostic[] {
   if (!Number.isFinite(w.heightM) || w.heightM <= 0) bad('heightM', w.heightM)
   if (!Number.isFinite(w.thicknessM) || w.thicknessM <= 0) bad('thicknessM', w.thicknessM)
 
-  const pts = w.topProfile?.points
-  if (pts) {
+  const prof = w.topProfile
+  if (prof?.kind === 'POLYLINE') {
+    const pts = prof.points
     if (pts.length < 2) {
       out.push({
         code: 'INVALID_WALL_PROFILE',
@@ -157,6 +168,48 @@ export function checkWall(w: WallSpec): WallDiagnostic[] {
           })
         }
       }
+    }
+  } else if (prof?.kind === 'PLANE') {
+    const pl = prof.plane
+    const finite = (v: Vec3): boolean => Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)
+    if (!finite(pl.pointM) || !finite(pl.normal)) {
+      out.push({
+        code: 'INVALID_WALL_PROFILE',
+        severity: 'ERROR',
+        message: `wall ${w.id}: top plane point and normal must be finite`,
+        wallId: w.id,
+      })
+    } else if (!(len(pl.normal) > AXIS_EPS)) {
+      out.push({
+        code: 'INVALID_WALL_PROFILE',
+        severity: 'ERROR',
+        message: `wall ${w.id}: top plane normal is degenerate (length ${len(pl.normal)})`,
+        wallId: w.id,
+      })
+    } else {
+      // The wall rises along `up`; a top plane it never meets is not a top. A
+      // vertical soffit is the case that matters — a wall under it would have
+      // no finite height at all, and dividing by the tiny denominator would
+      // emit one hundreds of metres tall instead of saying so.
+      const sin = dot(w.up, pl.normal) / (len(w.up) * len(pl.normal))
+      if (Math.abs(sin) <= PLANE_EPS) {
+        out.push({
+          code: 'WALL_TOP_PLANE_UNCROSSABLE',
+          severity: 'ERROR',
+          message:
+            `wall ${w.id}: its top plane is parallel to the wall's own up axis ` +
+            `(up . n / |n| = ${sin}), so the wall never reaches it`,
+          wallId: w.id,
+        })
+      }
+    }
+    if (prof.sourceRoofId.length === 0) {
+      out.push({
+        code: 'INVALID_WALL_PROFILE',
+        severity: 'ERROR',
+        message: `wall ${w.id}: a PLANE top must name the roof whose underside it is`,
+        wallId: w.id,
+      })
     }
   }
 
@@ -198,7 +251,14 @@ function checkOpening(o: OpeningSpec, host: WallSpec, extent: WallExtent): WallD
   const a1 = o.offsetM + o.widthM
   const b0 = o.sillM
   const b1 = Math.max(o.sillM + o.heightM, o.sillM + (o.heightFarM ?? o.heightM))
-  const nominalTop = host.topProfile ? Math.max(...host.topProfile.points.map((q) => q.topM)) : host.heightM
+  // How high the wall gets anywhere the opening could be. For a POLYLINE that
+  // is the tallest stated point; for a PLANE, the top is linear in `u` so the
+  // extremes are at the emitted ends, on whichever face is higher.
+  const nominalTop = !host.topProfile
+    ? host.heightM
+    : host.topProfile.kind === 'POLYLINE'
+      ? Math.max(...host.topProfile.points.map((q) => q.topM))
+      : Math.max(topMaxAt(host, extent.a0), topMaxAt(host, extent.a1))
   if (a0 < -BREAK_EPS || b0 < -BREAK_EPS || a1 > host.lengthM + BREAK_EPS || b1 > nominalTop + BREAK_EPS) {
     out.push({
       code: 'OPENING_OUTSIDE_HOST',
@@ -243,11 +303,23 @@ function checkOpening(o: OpeningSpec, host: WallSpec, extent: WallExtent): WallD
   if (host.topProfile) {
     // Under a sloped top, "inside the wall" is not a rectangle. Both head
     // corners have to clear the profile, or the cut would open the roof.
+    //
+    // Under a PLANE top the wall is lower on one face than the other, and the
+    // cut goes through both, so the head is measured against the *lower* of
+    // them. STAGE WEB-PIVOT-02A refuses an opening that reaches the soffit
+    // rather than clipping it to some shape nobody wrote down: the head of a
+    // window is a stated dimension, and a compiler that silently turned it into
+    // a rake would be inventing the drawing.
     const headNear = o.sillM + o.heightM
     const headFar = o.sillM + (o.heightFarM ?? o.heightM)
-    const topNear = profileTopAt(host, a0)
-    const topFar = profileTopAt(host, a1)
-    if (headNear > topNear + BREAK_EPS || headFar > topFar + BREAK_EPS) {
+    const topNear = topMinAt(host, a0)
+    const topFar = topMinAt(host, a1)
+    // A PLANE top must be *cleared*, not merely reached: an opening whose head
+    // lands exactly on the soffit at one face and below it at the other leaves
+    // a zero-height band on one side of the wall and not the other. The wall
+    // would still close, but nobody drew that, so it is refused by name.
+    const margin = host.topProfile.kind === 'PLANE' ? -BREAK_EPS : BREAK_EPS
+    if (headNear > topNear + margin || headFar > topFar + margin) {
       out.push({
         code: 'OPENING_ABOVE_WALL_PROFILE',
         severity: 'ERROR',
@@ -303,6 +375,46 @@ function checkExtent(w: WallSpec, e: WallExtent): WallDiagnostic[] {
 }
 
 /**
+ * Validate a wall's top over the span that is actually emitted.
+ *
+ * Separate from `checkWall` because it needs the extent: a junction may have
+ * given part of the wall away, and a top that dips below the base out there is
+ * not this wall's problem. The top is linear in `u` on a `PLANE` and piecewise
+ * linear on a `POLYLINE`, so the minimum over the emitted rectangle is attained
+ * at one of its corners — the extent ends crossed with the two faces, plus any
+ * interior profile vertex.
+ */
+function checkWallTop(w: WallSpec, e: WallExtent): WallDiagnostic[] {
+  if (!w.topProfile) return []
+  const us = [e.a0, e.a1]
+  if (w.topProfile.kind === 'POLYLINE') {
+    for (const q of w.topProfile.points) if (q.u > e.a0 && q.u < e.a1) us.push(q.u)
+  }
+  let worstU = e.a0
+  let worst = Infinity
+  for (const u of us) {
+    for (const c of [0, w.thicknessM]) {
+      const t = wallTopAt(w, u, c)
+      if (!Number.isFinite(t) || t < worst) {
+        worst = Number.isFinite(t) ? t : Number.NEGATIVE_INFINITY
+        worstU = u
+      }
+    }
+  }
+  if (worst > BREAK_EPS) return []
+  return [
+    {
+      code: 'WALL_TOP_BELOW_BASE',
+      severity: 'ERROR',
+      message:
+        `wall ${w.id}: its top reaches only ${worst} m above the base at u = ${worstU}, so the wall ` +
+        'has no material there; a top profile describes where the wall stops, it does not invert it',
+      wallId: w.id,
+    },
+  ]
+}
+
+/**
  * Compile one wall and the openings already validated against it.
  *
  * `extent` is the span of the wall's own `u` coordinate that is emitted. It
@@ -354,8 +466,10 @@ function compileWall(
   for (let j = 0; j + 1 < bBreaks.length; j++) {
     const b0 = bBreaks[j]
     const b1 = bBreaks[j + 1]
-    quad(out, P(A0, b0, 0), P(A0, b1, 0), P(A0, b1, T), P(A0, b0, T), 'WALL', w.id, w.id, undefined, extent.a0ContactId) // -u
-    quad(out, P(A1, b0, 0), P(A1, b0, T), P(A1, b1, T), P(A1, b1, 0), 'WALL', w.id, w.id, undefined, extent.a1ContactId) // +u
+    const k0: ContactKind | undefined = extent.a0ContactId ? 'JUNCTION' : undefined
+    const k1: ContactKind | undefined = extent.a1ContactId ? 'JUNCTION' : undefined
+    quad(out, P(A0, b0, 0), P(A0, b1, 0), P(A0, b1, T), P(A0, b0, T), 'WALL', w.id, w.id, undefined, extent.a0ContactId, k0) // -u
+    quad(out, P(A1, b0, 0), P(A1, b0, T), P(A1, b1, T), P(A1, b1, 0), 'WALL', w.id, w.id, undefined, extent.a1ContactId, k1) // +u
   }
 
   // Bottom and top, split on the length breaks for the same reason.
@@ -386,15 +500,50 @@ function compileWall(
 }
 
 /**
- * Height of a wall's top above its base at position `u`.
+ * Height of a wall's top above its base at position `u`, on the face `c` metres
+ * in from the outer face.
  *
- * Absent profile means a flat top at the nominal height, which is what every
- * wall in STAGE WEB-PIVOT-01, 01B and 01C has. Outside the profile's own span
- * the first and last points hold, so a profile never has to restate the ends.
+ * Three cases, and the third is the whole of STAGE WEB-PIVOT-02A:
+ *
+ *   - **no profile** — a flat top at the nominal height, which is what every
+ *     wall in STAGE WEB-PIVOT-01, 01B and 01C has. `c` is not read.
+ *   - **`POLYLINE`** — piecewise linear in `u`. Outside the profile's own span
+ *     the first and last points hold, so a profile never has to restate the
+ *     ends. `c` is not read: a gable end has one top edge.
+ *   - **`PLANE`** — the height at which the wall's material line at `(u, c)`
+ *     meets the stated world plane. This is the only case where the answer
+ *     depends on `c`, and it is what closes the eave wedge: the outer face and
+ *     the inner face stop at different heights because the soffit above them is
+ *     not level.
+ *
+ * The plane solve is one line of algebra and no iteration. A point of the wall
+ * is `p(b) = wallPoint(w, u, 0, c) + b * up`; it is on the plane when
+ * `(p(b) - pointM) . normal = 0`, so
+ *
+ *     b = ((pointM - wallPoint(w, u, 0, c)) . normal) / (up . normal)
+ *
+ * which is defined exactly when `up` is not parallel to the plane. `checkWall`
+ * refuses a wall whose plane fails that test rather than dividing by something
+ * near zero and emitting a wall a kilometre tall.
  */
-export function profileTopAt(w: WallSpec, u: number): number {
-  const pts = w.topProfile?.points
-  if (!pts || pts.length === 0) return w.heightM
+export function wallTopAt(w: WallSpec, u: number, c: number): number {
+  const prof = w.topProfile
+  if (!prof) return w.heightM
+  if (prof.kind === 'PLANE') {
+    const up = wallFrame(w).up
+    const nLen = len(prof.plane.normal)
+    const den = dot(up, prof.plane.normal)
+    if (!(nLen > 0) || Math.abs(den) <= PLANE_EPS * nLen) return w.heightM
+    const base = wallPoint(w, u, 0, c)
+    const d = {
+      x: prof.plane.pointM.x - base.x,
+      y: prof.plane.pointM.y - base.y,
+      z: prof.plane.pointM.z - base.z,
+    }
+    return dot(d, prof.plane.normal) / den
+  }
+  const pts = prof.points
+  if (pts.length === 0) return w.heightM
   if (u <= pts[0].u) return pts[0].topM
   const last = pts[pts.length - 1]
   if (u >= last.u) return last.topM
@@ -408,6 +557,14 @@ export function profileTopAt(w: WallSpec, u: number): number {
   }
   return last.topM
 }
+
+/** Lowest the wall top gets at `u`, across the full thickness. */
+const topMinAt = (w: WallSpec, u: number): number =>
+  Math.min(wallTopAt(w, u, 0), wallTopAt(w, u, w.thicknessM))
+
+/** Highest the wall top gets at `u`, across the full thickness. */
+const topMaxAt = (w: WallSpec, u: number): number =>
+  Math.max(wallTopAt(w, u, 0), wallTopAt(w, u, w.thicknessM))
 
 /** Head height of an opening above the wall base at `u`, raked or level. */
 const headAt = (o: OpeningSpec, u: number): number => {
@@ -467,11 +624,28 @@ function compileProfiledWall(
   const A0 = extent.a0
   const A1 = extent.a1
   const hole = openings[0]
+  /**
+   * The roof this wall's top dies into, when it has one.
+   *
+   * A `PLANE` top is not exposed fabric: the roof sits on it. Tagging the top
+   * face with the roof's id keeps it out of every facade measure — the same
+   * mechanism a junction uses for a trimmed end — and says which element it is
+   * in contact with. A `POLYLINE` gable end is genuinely outside, so it is not
+   * tagged, and STAGE WEB-PIVOT-02's facade numbers are unchanged.
+   */
+  const soffitId = w.topProfile?.kind === 'PLANE' ? w.topProfile.sourceRoofId : undefined
 
-  const top = (u: number): number => profileTopAt(w, u)
-  /** The three band boundaries at `u`, always non-decreasing and always four long. */
-  const bands = (u: number): [number, number, number, number] => {
-    const t0 = top(u)
+  /**
+   * The three band boundaries at `(u, c)`, always non-decreasing, always four
+   * long.
+   *
+   * Only the last boundary — the wall top — can depend on `c`, and only under a
+   * `PLANE` profile. The sill and the head are opening coordinates, which this
+   * stage does not touch: a window is at the same height on both faces of the
+   * wall, whatever the roof above it is doing.
+   */
+  const bands = (u: number, c: number): [number, number, number, number] => {
+    const t0 = wallTopAt(w, u, c)
     if (!hole) return [0, t0, t0, t0]
     const sill = clamp(hole.sillM, 0, t0)
     const head = clamp(Math.max(headAt(hole, u), hole.sillM), sill, t0)
@@ -482,7 +656,7 @@ function compileProfiledWall(
     A0,
     A1,
     [
-      ...(w.topProfile?.points ?? []).map((q) => q.u),
+      ...(w.topProfile?.kind === 'POLYLINE' ? w.topProfile.points.map((q) => q.u) : []),
       ...(hole ? [hole.offsetM, hole.offsetM + hole.widthM] : []),
     ].filter((u) => u > A0 + BREAK_EPS && u < A1 - BREAK_EPS),
   )
@@ -499,11 +673,13 @@ function compileProfiledWall(
     ownerId: string,
     openingId?: string,
     contactId?: string,
+    contactKind?: ContactKind,
   ): void => {
     if (degenerate01 && degenerate23) return
-    if (degenerate01) out.push({ a: p0, b: p2, c: p3, part, ownerId, wallId: w.id, openingId, contactId })
-    else if (degenerate23) out.push({ a: p0, b: p1, c: p2, part, ownerId, wallId: w.id, openingId, contactId })
-    else quad(out, p0, p1, p2, p3, part, ownerId, w.id, openingId, contactId)
+    const tag = { part, ownerId, wallId: w.id, openingId, contactId, contactKind }
+    if (degenerate01) out.push({ a: p0, b: p2, c: p3, ...tag })
+    else if (degenerate23) out.push({ a: p0, b: p1, c: p2, ...tag })
+    else quad(out, p0, p1, p2, p3, part, ownerId, w.id, openingId, contactId, contactKind)
   }
 
   const inHole = (u0: number, u1: number): boolean =>
@@ -512,47 +688,116 @@ function compileProfiledWall(
   for (let i = 0; i + 1 < aBreaks.length; i++) {
     const u0 = aBreaks[i]
     const u1 = aBreaks[i + 1]
-    const L = bands(u0)
-    const R = bands(u1)
+    const LO = bands(u0, 0)
+    const RO = bands(u1, 0)
+    const LI = bands(u0, T)
+    const RI = bands(u1, T)
     const void1 = inHole(u0, u1)
 
     for (let j = 0; j < 3; j++) {
       if (j === 1 && void1) continue
-      const dl = Math.abs(L[j + 1] - L[j]) <= BREAK_EPS
-      const dr = Math.abs(R[j + 1] - R[j]) <= BREAK_EPS
       // Outer face, outward +n.
-      face(P(u0, L[j], 0), P(u1, R[j], 0), P(u1, R[j + 1], 0), P(u0, L[j + 1], 0), dr, dl, 'WALL', w.id)
-      // Inner face, outward -n: the same corners the other way round.
-      face(P(u0, L[j], T), P(u0, L[j + 1], T), P(u1, R[j + 1], T), P(u1, R[j], T), dl, dr, 'WALL_INNER', w.id)
+      face(
+        P(u0, LO[j], 0),
+        P(u1, RO[j], 0),
+        P(u1, RO[j + 1], 0),
+        P(u0, LO[j + 1], 0),
+        Math.abs(RO[j + 1] - RO[j]) <= BREAK_EPS,
+        Math.abs(LO[j + 1] - LO[j]) <= BREAK_EPS,
+        'WALL',
+        w.id,
+      )
+      // Inner face, outward -n: the same corners the other way round, at its
+      // own band heights — under a PLANE top the two faces stop at different
+      // places, and that difference *is* the wedge this stage closes.
+      face(
+        P(u0, LI[j], T),
+        P(u0, LI[j + 1], T),
+        P(u1, RI[j + 1], T),
+        P(u1, RI[j], T),
+        Math.abs(LI[j + 1] - LI[j]) <= BREAK_EPS,
+        Math.abs(RI[j + 1] - RI[j]) <= BREAK_EPS,
+        'WALL_INNER',
+        w.id,
+      )
     }
 
     // Bottom, outward -up — but not under an opening that reaches the base: a
     // door to floor level has no wall underneath it to close off.
-    const openToBase = void1 && L[1] <= BREAK_EPS && R[1] <= BREAK_EPS
+    const openToBase = void1 && LO[1] <= BREAK_EPS && RO[1] <= BREAK_EPS
     if (!openToBase) quad(out, P(u0, 0, 0), P(u0, 0, T), P(u1, 0, T), P(u1, 0, 0), 'WALL', w.id, w.id)
-    // Top, following the profile; its outward normal leans with the slope.
-    quad(out, P(u0, L[3], 0), P(u1, R[3], 0), P(u1, R[3], T), P(u0, L[3], T), 'WALL', w.id, w.id)
+    // Top. Under a POLYLINE the four corners are at two heights and this is the
+    // ribbon STAGE WEB-PIVOT-02 emitted; under a PLANE all four lie on the
+    // stated plane, so the quad is planar and *is* the soffit contact.
+    quad(
+      out,
+      P(u0, LO[3], 0),
+      P(u1, RO[3], 0),
+      P(u1, RI[3], T),
+      P(u0, LI[3], T),
+      'WALL',
+      w.id,
+      w.id,
+      undefined,
+      soffitId,
+      soffitId ? 'ROOF_SOFFIT' : undefined,
+    )
 
     if (hole && void1) {
       const id = hole.id
       // Sill, outward +up; head, outward the other way, both following the strip.
       // A sill at the wall base is the wall's own underside, already closed (or
       // deliberately open) above, so it is not emitted twice.
-      if (!openToBase) quad(out, P(u0, L[1], 0), P(u1, R[1], 0), P(u1, R[1], T), P(u0, L[1], T), 'REVEAL', id, w.id, id)
-      quad(out, P(u0, L[2], 0), P(u0, L[2], T), P(u1, R[2], T), P(u1, R[2], 0), 'REVEAL', id, w.id, id)
+      if (!openToBase) quad(out, P(u0, LO[1], 0), P(u1, RO[1], 0), P(u1, RO[1], T), P(u0, LO[1], T), 'REVEAL', id, w.id, id)
+      quad(out, P(u0, LO[2], 0), P(u0, LO[2], T), P(u1, RO[2], T), P(u1, RO[2], 0), 'REVEAL', id, w.id, id)
     }
   }
 
-  // Ends, split on the same bands so they meet the faces edge to edge.
-  for (const [u, outward] of [
-    [A0, -1],
-    [A1, 1],
+  // Ends, split on the same bands so they meet the faces edge to edge. Each
+  // band is a trapezoid, not a rectangle: the top boundary is at one height on
+  // the outer face and another on the inner. An end cut back by a junction
+  // carries that junction's id, exactly as the rectangular path's ends do —
+  // without it a trimmed profiled wall would report its buried end face as
+  // facade, which is what STAGE WEB-PIVOT-02's attic walls were doing.
+  for (const [u, outward, contactId] of [
+    [A0, -1, extent.a0ContactId],
+    [A1, 1, extent.a1ContactId],
   ] as const) {
-    const B = bands(u)
+    const BO = bands(u, 0)
+    const BI = bands(u, T)
     for (let j = 0; j < 3; j++) {
-      if (Math.abs(B[j + 1] - B[j]) <= BREAK_EPS) continue
-      if (outward < 0) quad(out, P(u, B[j], 0), P(u, B[j + 1], 0), P(u, B[j + 1], T), P(u, B[j], T), 'WALL', w.id, w.id)
-      else quad(out, P(u, B[j], 0), P(u, B[j], T), P(u, B[j + 1], T), P(u, B[j + 1], 0), 'WALL', w.id, w.id)
+      const dOuter = Math.abs(BO[j + 1] - BO[j]) <= BREAK_EPS
+      const dInner = Math.abs(BI[j + 1] - BI[j]) <= BREAK_EPS
+      const kind: ContactKind | undefined = contactId ? 'JUNCTION' : undefined
+      if (outward < 0) {
+        face(
+          P(u, BO[j], 0),
+          P(u, BO[j + 1], 0),
+          P(u, BI[j + 1], T),
+          P(u, BI[j], T),
+          dOuter,
+          dInner,
+          'WALL',
+          w.id,
+          undefined,
+          contactId,
+          kind,
+        )
+      } else {
+        face(
+          P(u, BO[j], 0),
+          P(u, BI[j], T),
+          P(u, BI[j + 1], T),
+          P(u, BO[j + 1], 0),
+          dInner,
+          dOuter,
+          'WALL',
+          w.id,
+          undefined,
+          contactId,
+          kind,
+        )
+      }
     }
   }
 
@@ -560,8 +805,8 @@ function compileProfiledWall(
   // Jambs: the opening's two vertical edges, each spanning its own band there.
   const h0 = hole.offsetM
   const h1 = hole.offsetM + hole.widthM
-  const B0 = bands(h0)
-  const B1 = bands(h1)
+  const B0 = bands(h0, 0)
+  const B1 = bands(h1, 0)
   quad(out, P(h0, B0[1], 0), P(h0, B0[1], T), P(h0, B0[2], T), P(h0, B0[2], 0), 'REVEAL', hole.id, w.id, hole.id)
   quad(out, P(h1, B1[1], 0), P(h1, B1[2], 0), P(h1, B1[2], T), P(h1, B1[1], T), 'REVEAL', hole.id, w.id, hole.id)
 
@@ -614,6 +859,7 @@ export function compileWalls(
     }
     const extent = extents?.get(w.id) ?? fullExtent(w)
     const extentProblems = checkExtent(w, extent)
+    if (extentProblems.length === 0) extentProblems.push(...checkWallTop(w, extent))
     if (extentProblems.length > 0) {
       diagnostics.push(...extentProblems)
       continue

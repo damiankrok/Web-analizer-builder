@@ -46,6 +46,19 @@ import {
 const UP = { x: 0, y: 1, z: 0 }
 /** Half a millimetre: below any drawing's precision, far above float noise. */
 const MM = 5e-4
+/**
+ * How far the attic walls' stated top plane may sit from the compiled roof's
+ * underside — STAGE WEB-PIVOT-02A.
+ *
+ * Five microns, and the whole of it is the gold file's own rounding. The wall's
+ * top plane is stated from `roof.pitchDeg`; the roof's geometry is built from
+ * `level.eaveM` and `level.ridgeM`, both recorded to five decimals. Those two
+ * statements of the same slope differ by 9e-7, which over the 0.45 m thickness
+ * of the wall is 1.7e-6 m. Nothing in the compiler contributes to it: the
+ * synthetic fixture, where both sides come from exact numbers, closes to float
+ * precision (`tests/eave-closure.test.ts`).
+ */
+const SOFFIT_TOL = 5e-6
 
 const build = (spec = marcowkiBuildingSpec()): BuildingCompileResult => compileBuilding(spec)
 const solidOf = (r: BuildingCompileResult): BuildingTri[] => r.tris.filter((t) => isSolidBuildingPart(t.part))
@@ -180,13 +193,25 @@ describe('Marcowki shell — stacked storeys', () => {
     expect(attic.baseM).toBeCloseTo(M.upperFfl, 12)
 
     // Measured, not assumed: a vertical line through the left wall runs from
-    // the ground floor to the top of the attic's knee wall without a break,
-    // even though that is two storeys of separate solids stacked on each other.
+    // the ground floor to the underside of the roof without a break, even
+    // though that is two storeys of separate solids stacked on each other and
+    // then a roof on top.
+    //
+    // The line is taken at mid-thickness, and since STAGE WEB-PIVOT-02A that is
+    // *not* the eave: the soffit above this wall slopes, so the wall's top
+    // rises across its own thickness. Where it has to stop is read off the
+    // emitted roof, not computed here — which makes this the interface check it
+    // always looked like.
     const walls = solidOf(r).filter((t) => t.elementKind === 'WALL')
+    const roof = solidOf(r).filter((t) => t.elementId === IDS.gableRoof)
     const at = { x: M.wallThickness / 2, z: M.overallDepth / 2 }
-    expect(show(verticalRuns(walls, at.x, at.z))).toBe(
-      show([{ t0: M.groundFfl, t1: M.upperFfl + ATTIC_EAVE_H }]),
-    )
+    const soffit = verticalRuns(roof, at.x, at.z)[0].t0
+    const column = verticalRuns(walls, at.x, at.z)
+    expect(column).toHaveLength(1)
+    expect(column[0].t0).toBeCloseTo(M.groundFfl, 9)
+    // And no wedge of air between wall and roof: the wall stops where the roof
+    // starts, to the gold file's own rounding and no worse.
+    expect(Math.abs(column[0].t1 - soffit)).toBeLessThan(SOFFIT_TOL)
   })
 
   it('puts the floor plate between the two storeys and inside the walls', () => {
@@ -457,10 +482,16 @@ describe('Marcowki shell — against the drawings', () => {
     const solid = solidOf(r)
     // A vertical line just inside the left wall meets the ground storey, then
     // the attic, then the roof, in that order and with no gaps between them.
+    const roofTris = solid.filter((t) => t.elementId === IDS.gableRoof)
     const runs = verticalRuns(solid.filter((t) => t.elementKind === 'WALL'), M.wallThickness / 2, 6.0)
     expect(runs).toHaveLength(1)
     expect(runs[0].t0).toBeCloseTo(M.groundFfl, 9)
-    expect(runs[0].t1).toBeCloseTo(M.upperFfl + ATTIC_EAVE_H, 9)
+    // Since STAGE WEB-PIVOT-02A the wall stops at the soffit, which at
+    // mid-thickness is above the eave-face knee wall by half a thickness of
+    // slope. Read from the roof's own triangles.
+    expect(Math.abs(runs[0].t1 - verticalRuns(roofTris, M.wallThickness / 2, 6.0)[0].t0)).toBeLessThan(
+      SOFFIT_TOL,
+    )
     // The ridge is over the middle of the main body.
     const planes = measureRoofPlanes(elementTris(r, IDS.gableRoof), UP)
     expect(RIDGE_X).toBeCloseTo(M.mainWidth / 2, 12)
@@ -476,7 +507,19 @@ describe('Marcowki shell — against the drawings', () => {
     expect(ATTIC_EAVE_H).toBeCloseTo(M.kneeWall, 12)
     const r = build()
     const side = wallTris(r, 'attic_left')
-    expect(meshBounds(side).max.y).toBeCloseTo(M.upperFfl + M.kneeWall, 9)
+    // The section prints the knee wall at the *outer face*, which is where the
+    // eave datum is taken, so that is where it is measured. Since STAGE
+    // WEB-PIVOT-02A the inner face is higher: the wall follows the soffit
+    // across its thickness instead of leaving a wedge of air under it.
+    const onPlane = (x: number) => (t: OTri): boolean =>
+      [t.a, t.b, t.c].every((p) => Math.abs(p.x - x) < 1e-9)
+    const outer = side.filter(onPlane(MAIN.minX))
+    const inner = side.filter(onPlane(MAIN.minX + M.wallThickness))
+    expect(meshBounds(outer).max.y).toBeCloseTo(M.upperFfl + M.kneeWall, 9)
+    expect(meshBounds(inner).max.y).toBeCloseTo(
+      M.upperFfl + M.kneeWall + M.wallThickness * Math.tan((M.pitchDeg * Math.PI) / 180),
+      9,
+    )
   })
 })
 

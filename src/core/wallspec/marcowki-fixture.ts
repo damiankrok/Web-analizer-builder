@@ -10,7 +10,7 @@
  * This is not an analyzer output. It is a manual transcription used to ask one
  * question: given a correct description, does the compiler realise it?
  */
-import type { GlazingSpec, OpeningSpec, WallSpec } from './contracts.js'
+import type { GlazingSpec, OpeningSpec, WallSpec, WallTopPlane, WallTopProfile } from './contracts.js'
 import type { WallJunctionSpec } from './junction.js'
 import type {
   BuildingSpec,
@@ -141,6 +141,9 @@ const LEVEL = {
   atticTop: 'level_ridge',
 } as const
 
+/** Which side of a plan rectangle a ring wall is. */
+type RingSide = 'front' | 'right' | 'rear' | 'left'
+
 /**
  * Four walls and four corners around a rectangle, nose to tail.
  *
@@ -157,10 +160,10 @@ function rectRing(
   baseY: number,
   heightM: number,
   thicknessM: number,
-  profiles?: { alongX?: WallSpec['topProfile']; alongZ?: WallSpec['topProfile'] },
+  profiles?: Partial<Record<RingSide, WallTopProfile>>,
 ): { walls: WallSpec[]; junctions: WallJunctionSpec[] } {
   const up = { x: 0, y: 1, z: 0 }
-  const w = (id: string, origin: WallSpec['origin'], u: WallSpec['u'], lengthM: number, alongX: boolean): WallSpec => ({
+  const w = (id: string, origin: WallSpec['origin'], u: WallSpec['u'], lengthM: number, side: RingSide): WallSpec => ({
     id,
     origin,
     u,
@@ -168,7 +171,7 @@ function rectRing(
     lengthM,
     heightM,
     thicknessM,
-    ...((alongX ? profiles?.alongX : profiles?.alongZ) ? { topProfile: (alongX ? profiles!.alongX : profiles!.alongZ)! } : {}),
+    ...(profiles?.[side] ? { topProfile: profiles[side]! } : {}),
   })
   const width = r.maxX - r.minX
   const depth = r.maxZ - r.minZ
@@ -177,10 +180,10 @@ function rectRing(
   const rear = `${prefix}_rear`
   const left = `${prefix}_left`
   const walls = [
-    w(front, { x: r.minX, y: baseY, z: r.maxZ }, { x: 1, y: 0, z: 0 }, width, true),
-    w(right, { x: r.maxX, y: baseY, z: r.maxZ }, { x: 0, y: 0, z: -1 }, depth, false),
-    w(rear, { x: r.maxX, y: baseY, z: r.minZ }, { x: -1, y: 0, z: 0 }, width, true),
-    w(left, { x: r.minX, y: baseY, z: r.minZ }, { x: 0, y: 0, z: 1 }, depth, false),
+    w(front, { x: r.minX, y: baseY, z: r.maxZ }, { x: 1, y: 0, z: 0 }, width, 'front'),
+    w(right, { x: r.maxX, y: baseY, z: r.maxZ }, { x: 0, y: 0, z: -1 }, depth, 'right'),
+    w(rear, { x: r.maxX, y: baseY, z: r.minZ }, { x: -1, y: 0, z: 0 }, width, 'rear'),
+    w(left, { x: r.minX, y: baseY, z: r.minZ }, { x: 0, y: 0, z: 1 }, depth, 'left'),
   ]
   const j = (id: string, a: string, aEnd: 'START' | 'END', b: string, bEnd: 'START' | 'END', owner: string): WallJunctionSpec => ({
     id,
@@ -201,7 +204,8 @@ function rectRing(
 }
 
 /** A symmetric gable profile: eave at both ends, ridge at the middle. */
-const gableProfile = (lengthM: number, peakU: number): WallSpec['topProfile'] => ({
+const gableProfile = (lengthM: number, peakU: number): WallTopProfile => ({
+  kind: 'POLYLINE',
   points: [
     { u: 0, topM: ATTIC_EAVE_H },
     { u: peakU, topM: ATTIC_RIDGE_H },
@@ -209,12 +213,36 @@ const gableProfile = (lengthM: number, peakU: number): WallSpec['topProfile'] =>
   ],
 })
 
-/** A flat top below the wall's nominal height, so a ring's walls share one height. */
-const flatProfile = (lengthM: number, topM: number): WallSpec['topProfile'] => ({
-  points: [
-    { u: 0, topM },
-    { u: lengthM, topM },
-  ],
+/**
+ * The underside of the main roof, as a world plane — STAGE WEB-PIVOT-02A.
+ *
+ * Stated from the gold file, not read off the compiled roof. The roof and the
+ * wall top therefore agree, or fail to, as a matter of fact rather than of
+ * construction, and `tests/eave-closure.test.ts` measures which by putting a
+ * ray through both sets of emitted triangles.
+ *
+ * `atX` is where the plane passes through the eave datum — the outer face of
+ * the wall below it — and the slope runs up from there towards the ridge. The
+ * pitch is `roof.pitchDeg`, the same observation the roof's own eave and ridge
+ * levels were checked against in STAGE WEB-PIVOT-02.
+ */
+const SOFFIT_SLOPE = Math.tan((M.pitchDeg * Math.PI) / 180)
+/** World elevation of the attic side walls' outer-face top: the roof's underside at the eave. */
+const ATTIC_EAVE_WORLD = M.upperFfl + ATTIC_EAVE_H
+
+export const soffitPlane = (atX: number, risesTowardsPlusX: boolean, liftM = 0): WallTopPlane => ({
+  pointM: { x: atX, y: ATTIC_EAVE_WORLD + liftM, z: 0 },
+  normal: { x: risesTowardsPlusX ? -SOFFIT_SLOPE : SOFFIT_SLOPE, y: 1, z: 0 },
+})
+
+const soffitProfile = (
+  atX: number,
+  risesTowardsPlusX: boolean,
+  opts: { soffitRoofId?: string; soffitLiftM?: number } = {},
+): WallTopProfile => ({
+  kind: 'PLANE',
+  plane: soffitPlane(atX, risesTowardsPlusX, opts.soffitLiftM ?? 0),
+  sourceRoofId: opts.soffitRoofId ?? IDS.gableRoof,
 })
 
 export type MarcowkiOptions = {
@@ -228,16 +256,49 @@ export type MarcowkiOptions = {
    * wall, off by default so the gold shell stays source-only.
    */
   diagnosticRecessOpening?: boolean
+  /**
+   * Give the attic's side walls the flat tops they had before STAGE
+   * WEB-PIVOT-02A, so the wedge they used to leave can be measured rather than
+   * remembered.
+   *
+   * This is the defect, kept as a switch: a test that only ever sees the fixed
+   * shell cannot say how much was fixed, and a number quoted from a previous
+   * stage's report is not evidence.
+   */
+  flatEaveTops?: boolean
+  /** Name a roof the spec does not have, to prove the wall/roof link is checked. */
+  soffitRoofId?: string
+  /** Lift the attic side walls' stated top plane without moving the roof. */
+  soffitLiftM?: number
 }
+
+/** The pre-02A shape: a flat top below the wall's nominal height. */
+const flatProfile = (lengthM: number, topM: number): WallTopProfile => ({
+  kind: 'POLYLINE',
+  points: [
+    { u: 0, topM },
+    { u: lengthM, topM },
+  ],
+})
 
 export function marcowkiBuildingSpec(opts: MarcowkiOptions = {}): BuildingSpec {
   const t = M.wallThickness
   const ground = rectRing('ground_main', MAIN, M.groundFfl, M.upperFfl - M.groundFfl, t)
   const garageTop = M.flatTop - M.flatThickness
   const garage = rectRing('garage', GARAGE, M.groundFfl, garageTop - M.groundFfl, t)
+  // The two gable ends run across the slope, so their top is one edge and a
+  // POLYLINE says it. The two side walls run *along* the ridge and die into the
+  // slope, so their top tilts across the wall's own thickness — the wedge STAGE
+  // WEB-PIVOT-02 measured at 1.99 m3 and this stage closes.
+  const sideTop = (atX: number, risesTowardsPlusX: boolean): WallTopProfile =>
+    opts.flatEaveTops
+      ? flatProfile(M.overallDepth, ATTIC_EAVE_H)
+      : soffitProfile(atX, risesTowardsPlusX, opts)
   const attic = rectRing('attic', MAIN, M.upperFfl, ATTIC_RIDGE_H, t, {
-    alongX: gableProfile(M.mainWidth, RIDGE_X - MAIN.minX),
-    alongZ: flatProfile(M.overallDepth, ATTIC_EAVE_H),
+    front: gableProfile(M.mainWidth, RIDGE_X - MAIN.minX),
+    rear: gableProfile(M.mainWidth, RIDGE_X - MAIN.minX),
+    left: sideTop(MAIN.minX, true),
+    right: sideTop(MAIN.maxX, false),
   })
 
   const openings: OpeningSpec[] = [

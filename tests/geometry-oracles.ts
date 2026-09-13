@@ -567,3 +567,119 @@ export function materialRuns(
   if (depth > 0 && events.length > 0) out.push({ t0: start, t1: events[events.length - 1].t })
   return mergeIntervals(out, tolerance)
 }
+
+// --------------------------------------------------------------------------
+// Contact-interface oracles — STAGE WEB-PIVOT-02A.
+//
+// Two solids are meant to meet on a surface: a wall's top and the underside of
+// the roof above it. "Meet" has two failure modes and they are not symmetric —
+// a gap is daylight and an overlap is material counted twice — so both are
+// measured, separately and signed.
+//
+// The measurement is a ray, and nothing else. It does not know that either
+// solid has a top, a profile, a plane or a host; it knows where a line entered
+// and left material. The compiler's own idea of where the surfaces are cannot
+// therefore make this agree with it.
+// --------------------------------------------------------------------------
+
+export type ContactSample = {
+  label: string
+  /** Highest point of the lower solid on this line, or null if it is not there. */
+  lowerTopM: number | null
+  /** Lowest point of the upper solid on this line, or null if it is not there. */
+  upperBottomM: number | null
+  /**
+   * `upperBottom - lowerTop`. Positive is a void, negative is an overlap, and
+   * the sign is the whole point: an oracle that reported `|gap|` would call a
+   * wall buried in the roof a perfect fit.
+   */
+  gapM: number
+  /** Material on this line with the two solids measured one at a time. */
+  separateLengthM: number
+  /** Material on this line with the two measured as one union. */
+  unionLengthM: number
+  /** How many unbroken runs the union makes. One means no void anywhere on the line. */
+  unionRuns: number
+}
+
+/**
+ * Where two solids meet along one line.
+ *
+ * `separateLengthM` and `unionLengthM` are the double-filling test: a union can
+ * only be shorter than the sum of its parts where the parts overlap, so the
+ * difference between them is exactly the length of line inside both solids. It
+ * catches an overlap that `gapM` cannot see — one solid passing *through* the
+ * other rather than merely into it.
+ */
+export function sampleContact(
+  lower: readonly OTri[],
+  upper: readonly OTri[],
+  origin: OVec,
+  up: OVec,
+  label = '',
+): ContactSample {
+  const u = norm(up)
+  const lo = materialRuns(lower, origin, u)
+  const hi = materialRuns(upper, origin, u)
+  const both = materialRuns([...lower, ...upper], origin, u)
+  const lowerTopM = lo.length === 0 ? null : Math.max(...lo.map((i) => i.t1))
+  const upperBottomM = hi.length === 0 ? null : Math.min(...hi.map((i) => i.t0))
+  return {
+    label,
+    lowerTopM,
+    upperBottomM,
+    gapM: lowerTopM === null || upperBottomM === null ? Number.NaN : upperBottomM - lowerTopM,
+    separateLengthM: intervalsLength(lo) + intervalsLength(hi),
+    unionLengthM: intervalsLength(both),
+    unionRuns: both.length,
+  }
+}
+
+export type ContactReport = {
+  samples: ContactSample[]
+  /** Largest daylight between the two solids, over every sample. */
+  maxVoidM: number
+  /** Largest depth of one solid inside the other, over every sample. */
+  maxOverlapM: number
+  /** Largest length of line inside both solids at once. */
+  maxDoubleFilledM: number
+  /** Samples where one of the two solids was not on the line at all. */
+  missing: string[]
+  worstVoid: string
+  worstOverlap: string
+}
+
+/** `sampleContact` over a set of lines, summarised. */
+export function measureContact(
+  lower: readonly OTri[],
+  upper: readonly OTri[],
+  origins: ReadonlyArray<{ origin: OVec; label: string }>,
+  up: OVec,
+): ContactReport {
+  const samples = origins.map((o) => sampleContact(lower, upper, o.origin, up, o.label))
+  const report: ContactReport = {
+    samples,
+    maxVoidM: 0,
+    maxOverlapM: 0,
+    maxDoubleFilledM: 0,
+    missing: [],
+    worstVoid: '',
+    worstOverlap: '',
+  }
+  for (const s of samples) {
+    if (s.lowerTopM === null || s.upperBottomM === null) {
+      report.missing.push(s.label)
+      continue
+    }
+    if (s.gapM > report.maxVoidM) {
+      report.maxVoidM = s.gapM
+      report.worstVoid = s.label
+    }
+    if (-s.gapM > report.maxOverlapM) {
+      report.maxOverlapM = -s.gapM
+      report.worstOverlap = s.label
+    }
+    report.maxDoubleFilledM = Math.max(report.maxDoubleFilledM, s.separateLengthM - s.unionLengthM)
+  }
+  return report
+}

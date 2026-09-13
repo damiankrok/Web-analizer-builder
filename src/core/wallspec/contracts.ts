@@ -75,8 +75,9 @@ export type WallSpec = {
   heightM: number
   thicknessM: number
   /**
-   * Sloped top, for a gable end. Absent means a flat top at `heightM`, which is
-   * the only shape STAGE WEB-PIVOT-01, 01B and 01C ever compile.
+   * Sloped top: a gable end (`POLYLINE`), or a wall dying into a roof soffit
+   * (`PLANE`). Absent means a flat top at `heightM`, which is the only shape
+   * STAGE WEB-PIVOT-01, 01B and 01C ever compile.
    */
   topProfile?: WallTopProfile
 }
@@ -94,22 +95,68 @@ export type WallSpec = {
  * later stage adds them as a new case rather than by reinterpreting this one.
  */
 /**
- * A wall's top edge, as a height above the wall base at each position along it.
+ * A plane in world coordinates, as a point on it and a normal.
  *
- * STAGE WEB-PIVOT-02. A gable end is a rectangle with a triangle on top, and it
- * is one piece of wall material, not a rectangle plus a decorative patch. The
- * profile says so: `points` are `(u, top)` pairs in the wall's own frame, joined
- * by straight lines, and the wall is the region between `b = 0` and that line.
+ * STAGE WEB-PIVOT-02A. The normal need not be unit length and its sign is not
+ * read: the plane is a two-sided locus, and a wall top is the height at which
+ * the wall meets it, not a half-space test.
+ */
+export type WallTopPlane = {
+  pointM: Vec3
+  normal: Vec3
+}
+
+/**
+ * A wall's top surface.
+ *
+ * ## POLYLINE — a height along the wall (STAGE WEB-PIVOT-02)
+ *
+ * A gable end is a rectangle with a triangle on top, and it is one piece of
+ * wall material, not a rectangle plus a decorative patch. The profile says so:
+ * `points` are `(u, top)` pairs in the wall's own frame, joined by straight
+ * lines, and the wall is the region between `b = 0` and that line. The top is
+ * the same at the outer and the inner face, which is correct for a gable end,
+ * where the wall rises *in* the plane of the roof slopes rather than under one.
+ *
+ * ## PLANE — a height that also varies across the thickness (STAGE WEB-PIVOT-02A)
+ *
+ * A wall that stops *under* a pitched roof cannot have one top height. The
+ * soffit above it slopes, so the wall's outer face meets it lower than its
+ * inner face does (or the other way round, depending which way the slope runs),
+ * and a wall whose top is flat across its thickness leaves a wedge of air
+ * between itself and the roof — measured at `1.99 m³` in the Marcowki shell at
+ * the end of STAGE WEB-PIVOT-02.
+ *
+ * A `PLANE` top names the surface the wall dies into, in world coordinates, and
+ * the compiler solves for the height at each `(u, c)`. The wall's frame, its
+ * base, its `lengthM` and every opening coordinate are untouched: the only
+ * thing that changes is where the material stops.
+ *
+ * `sourceRoofId` is the roof whose underside this plane is claimed to be. It is
+ * carried so that the claim is checkable — a wall may not invent a top plane
+ * and call it a roof — and so that the contact surface can be traced back to
+ * the element it touches. The plane is *not* derived from the roof: deriving it
+ * would make the two agree by construction and prove nothing.
+ *
+ * ## What a profile never does
  *
  * `heightM` stays the wall's nominal height and is what an absent profile means
  * — a flat top at `heightM`. A profile never changes `heightM`; like
  * `WallExtent`, it describes what is emitted, and openings are still measured
  * against the wall's own origin.
  */
-export type WallTopProfile = {
-  /** At least two points, sorted by `u`, spanning the wall's emitted extent. */
-  points: ReadonlyArray<{ u: number; topM: number }>
-}
+export type WallTopProfile =
+  | {
+      kind: 'POLYLINE'
+      /** At least two points, sorted by `u`, spanning the wall's emitted extent. */
+      points: ReadonlyArray<{ u: number; topM: number }>
+    }
+  | {
+      kind: 'PLANE'
+      plane: WallTopPlane
+      /** The roof whose underside this plane is. Checked, never trusted. */
+      sourceRoofId: string
+    }
 
 export type OpeningSpec = {
   id: string
@@ -177,17 +224,35 @@ export type CompiledTri = {
   /** Set on reveal and glazing triangles. */
   openingId?: string
   /**
-   * Set when this face is in contact with another wall rather than exposed.
+   * Set when this face is in contact with another element rather than exposed.
    *
    * A butt junction leaves the trimmed wall's new end face pressed flat against
    * the owner's material. It is a real face of a closed solid — the mesh would
    * not be watertight without it — but it is not fabric anyone can see, and an
    * exposed-area measure that counted it would overstate the facade by one wall
-   * section per corner. The value is the junction's id, so the contact can be
-   * traced back to the record that created it.
+   * section per corner. The same is true of a wall top that dies into a roof
+   * soffit. The value is the id of the record that created the contact — the
+   * junction, or the roof — so it can be traced back.
    */
   contactId?: string
+  /**
+   * What the contact is against. Set exactly when `contactId` is.
+   *
+   * Both kinds are excluded from exposed facade area, but they are not the same
+   * fact and a reader should not have to guess from the id which one it is
+   * looking at.
+   */
+  contactKind?: ContactKind
 }
+
+/**
+ * Why a face is in contact rather than exposed.
+ *
+ * `JUNCTION` — a wall end pressed against the wall that owns the corner.
+ * `ROOF_SOFFIT` — a wall top pressed against the underside of its roof
+ * (STAGE WEB-PIVOT-02A's `WALL_TOP_SOFFIT_CONTACT`).
+ */
+export type ContactKind = 'JUNCTION' | 'ROOF_SOFFIT'
 
 export type WallDiagnosticCode =
   | 'DUPLICATE_WALL_ID'
@@ -207,6 +272,8 @@ export type WallDiagnosticCode =
   | 'INVALID_WALL_PROFILE'
   | 'OPENING_ABOVE_WALL_PROFILE'
   | 'TOO_MANY_OPENINGS_ON_PROFILED_WALL'
+  | 'WALL_TOP_PLANE_UNCROSSABLE'
+  | 'WALL_TOP_BELOW_BASE'
 
 export type WallDiagnostic = {
   code: WallDiagnosticCode

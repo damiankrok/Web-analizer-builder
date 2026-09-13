@@ -100,7 +100,17 @@ const rows: Array<[string, string, string]> = [
   ['footprint area', `${f3(M.publishedFootprint)} (published)`, f3(M.mainWidth * M.overallDepth + M.garageWidth * M.garageDepth)],
   ['ground FFL', f3(M.groundFfl), f3(runsAt(solid.filter((t) => t.elementKind === 'WALL'), M.wallThickness / 2, 6)[0].t0)],
   ['upper FFL', f3(M.upperFfl), f3(r.slabs[0].topM)],
-  ['knee wall top', f3(M.upperFfl + M.kneeWall), f3(meshBounds(solid.filter((t) => t.wallId === 'attic_left')).max.y)],
+  [
+    'knee wall top (outer face)',
+    f3(M.upperFfl + M.kneeWall),
+    f3(
+      meshBounds(
+        solid.filter(
+          (t) => t.wallId === 'attic_left' && [t.a, t.b, t.c].every((q) => Math.abs(q.x - MAIN.minX) < 1e-9),
+        ),
+      ).max.y,
+    ),
+  ],
   ['eave (derived)', `${f3(M.eave)} (printed datum ${f3(M.printedEave)})`, f3(measureRoofPlanes(r.tris.filter((t) => t.elementId === IDS.gableRoof), UP)[0].lowM)],
   ['ridge', f3(M.ridge), f3(measureRoofPlanes(r.tris.filter((t) => t.elementId === IDS.gableRoof), UP)[0].highM)],
   ['roof pitch', `${f3(M.pitchDeg)} deg (printed)`, `${measureRoofPlanes(r.tris.filter((t) => t.elementId === IDS.gableRoof), UP)[0].pitchDeg.toFixed(5)} deg`],
@@ -118,13 +128,17 @@ for (const x of [0.4, 1.5, 3.0, 3.6, 5.29, 6.9, 7.5]) {
   console.log(`  x=${x.toFixed(2)}  wall ${show(wall).padEnd(34)} roof ${show(roof)}`)
 }
 
-console.log('\n--- the eaves wedge, a known limitation')
-const side = runsAt(solid.filter((t) => t.wallId === 'attic_left'), M.wallThickness / 2, 6)
-const above = runsAt(r.tris.filter((t) => t.elementId === IDS.gableRoof), M.wallThickness / 2, 6)
-console.log(`  outer face of the attic left wall: wall ${show(side)}  roof ${show(above)}`)
-const inner = runsAt(solid.filter((t) => t.wallId === 'attic_left'), M.wallThickness * 0.95, 6)
-const innerRoof = runsAt(r.tris.filter((t) => t.elementId === IDS.gableRoof), M.wallThickness * 0.95, 6)
-console.log(`  inner face of the same wall      : wall ${show(inner)}  roof ${show(innerRoof)}`)
+// STAGE WEB-PIVOT-02 left a wedge of air here: the wall top was one height and
+// the soffit above it is a slope. STAGE WEB-PIVOT-02A closed it, and
+// `scripts/eave-closure-diagnostic.ts` measures the before and after. What is
+// printed below is the state of the interface now.
+console.log('\n--- the eaves, across the thickness of the attic left wall')
+for (const c of [0.0001, M.wallThickness / 2, M.wallThickness * 0.9999]) {
+  const wall = runsAt(solid.filter((t) => t.wallId === 'attic_left'), c, 6)
+  const above = runsAt(r.tris.filter((t) => t.elementId === IDS.gableRoof), c, 6)
+  const gap = above.length > 0 && wall.length > 0 ? above[0].t0 - wall[wall.length - 1].t1 : Number.NaN
+  console.log(`  c=${c.toFixed(4)}  wall ${show(wall).padEnd(22)} roof ${show(above).padEnd(22)} gap ${gap.toExponential(3)} m`)
+}
 
 // --- renders --------------------------------------------------------------
 const centre: Vec3 = { x: M.overallWidth / 2, y: 2.6, z: M.overallDepth / 2 }

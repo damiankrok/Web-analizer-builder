@@ -70,6 +70,7 @@ export type BuildingDiagnosticCode =
   | 'DUPLICATE_SHELL_ID'
   | 'INVALID_SLAB'
   | 'WALL_IN_NO_SHELL'
+  | 'WALL_TOP_ROOF_UNKNOWN'
 
 export type BuildingDiagnostic = {
   code: BuildingDiagnosticCode
@@ -140,6 +141,27 @@ export function compileBuilding(spec: BuildingSpec): BuildingCompileResult {
 
   const seenShell = new Set<string>()
   const wallsUsed = new Set<string>()
+
+  // A wall that dies into a roof soffit names the roof. The name is checked
+  // here, where the roofs are known, and nowhere inside the wall compiler: a
+  // wall must not have to see a roof to compile, and a roof must not become
+  // reachable from wall-local code. What this cannot check is whether the
+  // stated plane really is that roof's underside — that is a geometric fact
+  // about two emitted surfaces, and it is measured as one, by the interface
+  // oracle in `tests/eave-closure.test.ts`.
+  const roofIds = new Set(spec.roofs.map((r) => r.id))
+  for (const w of spec.walls) {
+    if (w.topProfile?.kind !== 'PLANE') continue
+    if (roofIds.has(w.topProfile.sourceRoofId)) continue
+    diagnostics.push({
+      code: 'WALL_TOP_ROOF_UNKNOWN',
+      severity: 'ERROR',
+      message:
+        `wall ${w.id} stops against the underside of roof ${w.topProfile.sourceRoofId}, ` +
+        'which is not in the spec',
+      wallId: w.id,
+    })
+  }
 
   for (const shell of spec.shells) {
     if (seenShell.has(shell.id)) {
