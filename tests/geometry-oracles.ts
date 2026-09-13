@@ -260,3 +260,147 @@ export function mergeIntervals(list: readonly Interval[], tolerance = 1e-9): Int
 
 export const intervalsLength = (list: readonly Interval[]): number =>
   list.reduce((acc, i) => acc + (i.t1 - i.t0), 0)
+
+// --------------------------------------------------------------------------
+// Whole-ring oracles — STAGE WEB-PIVOT-01C.
+//
+// A ring is several closed solids that touch. The single-mesh oracles above
+// still apply to each wall on its own, but three questions only make sense
+// across the whole set: does the material form one continuous ring, does any
+// pair of walls share volume, and how much of the emitted surface is actually
+// on the outside of the building.
+//
+// All three read triangles. None reads a junction record, an extent, an
+// ownership schedule or any other thing the compiler wrote down.
+// --------------------------------------------------------------------------
+
+/** One named closed mesh, so a failure can say which wall it was. */
+export type NamedMesh = { id: string; tris: readonly OTri[] }
+
+/**
+ * The material a ray passes through, per mesh and merged.
+ *
+ * `merged` is the union: touching runs are joined, so a ring whose corners are
+ * continuous reports one interval where a ring with a crack reports two. `byId`
+ * keeps them separate so a caller can say which wall each run came from.
+ */
+export function scanMaterial(
+  meshes: readonly NamedMesh[],
+  origin: OVec,
+  direction: OVec,
+  tolerance = 1e-9,
+): { merged: Interval[]; byId: Array<{ id: string; intervals: Interval[] }> } {
+  const byId = meshes.map((m) => ({ id: m.id, intervals: rayIntervals(m.tris, origin, direction, tolerance) }))
+  return { merged: mergeIntervals(byId.flatMap((m) => m.intervals), tolerance), byId }
+}
+
+/**
+ * Positive volume shared by two meshes, measured along one ray.
+ *
+ * Butt ownership means at most *contact*: the ownership record says one wall
+ * keeps the corner and the other stops at its face. Two solids that touch share
+ * a surface and no length, so every pair here must come back zero. Anything
+ * else is the corner prism emitted twice, and the pair names which corner.
+ */
+export function meshOverlapAlong(
+  meshes: readonly NamedMesh[],
+  origin: OVec,
+  direction: OVec,
+  tolerance = 1e-9,
+): Array<{ a: string; b: string; lengthM: number }> {
+  const scan = scanMaterial(meshes, origin, direction, tolerance).byId
+  const out: Array<{ a: string; b: string; lengthM: number }> = []
+  for (let i = 0; i < scan.length; i++) {
+    for (let j = i + 1; j < scan.length; j++) {
+      const lengthM = intervalsOverlapLength(scan[i].intervals, scan[j].intervals)
+      if (lengthM > tolerance) out.push({ a: scan[i].id, b: scan[j].id, lengthM })
+    }
+  }
+  return out
+}
+
+/** A triangle's outward unit normal and area. */
+function normalAndArea(t: OTri): { n: OVec; area: number } {
+  const n = cross(sub(t.b, t.a), sub(t.c, t.a))
+  const l = Math.hypot(n.x, n.y, n.z)
+  return { n: { x: n.x / l, y: n.y / l, z: n.z / l }, area: l / 2 }
+}
+
+/** A plane of the building's outer envelope: a point on it and its outward normal. */
+export type EnvelopePlane = { point: OVec; normal: OVec }
+
+/**
+ * Area of emitted surface lying on the building's outer envelope.
+ *
+ * This is the facade oracle, and it is deliberately *not* a visibility test.
+ * The obvious independent classifier — "a ray leaving the face along its normal
+ * escapes" — is wrong here, and wrong in a way worth recording: an open window
+ * lets a ray out, so the inner face of the wall opposite a window escapes
+ * through it and is counted as facade. Measured on the ring fixture that
+ * inflated 80.00 m2 to 99.65 m2, the surplus being exactly the two inner-face
+ * triangles whose centroids happened to line up with an opening. Visibility and
+ * facade are different questions, and through a hole the answers differ.
+ *
+ * What facade means is: on the outer envelope. So the envelope is what this
+ * takes — as planes, supplied by the caller from the fixture's own dimensions,
+ * never from anything the compiler recorded. A triangle counts when its normal
+ * matches a plane's outward normal and all three of its vertices lie in that
+ * plane. Ownership cannot change that answer, which is the invariant the two
+ * schedules are compared on; a rigid motion cannot either, as long as the
+ * planes move with the building.
+ *
+ * Only the planes given are considered, so passing the four vertical faces of a
+ * rectangular storey measures facade and leaves the open top and the underside
+ * out of it.
+ */
+export function envelopeFaceArea(
+  tris: readonly OTri[],
+  planes: readonly EnvelopePlane[],
+  opts?: { distanceTolerance?: number; normalTolerance?: number },
+): number {
+  const distTol = opts?.distanceTolerance ?? 1e-9
+  const normTol = opts?.normalTolerance ?? 1e-9
+  const unitPlanes = planes.map((p) => ({ point: p.point, normal: norm(p.normal) }))
+  let total = 0
+  for (const t of tris) {
+    const { n, area } = normalAndArea(t)
+    const plane = unitPlanes.find((p) => dot(n, p.normal) > 1 - normTol)
+    if (!plane) continue
+    const onPlane = [t.a, t.b, t.c].every(
+      (v) => Math.abs(dot(sub(v, plane.point), plane.normal)) <= distTol,
+    )
+    if (onPlane) total += area
+  }
+  return total
+}
+
+/**
+ * Whether a ray leaving this face along its own normal meets nothing.
+ *
+ * Not a facade test — see `envelopeFaceArea` for why — but exactly the right
+ * test for the other half of the contact-face policy: a face pressed against a
+ * neighbour's material must have something immediately in front of it. The ray
+ * starts a micrometre off the face so the coincident surface it is pressed
+ * against does not count as its own escape.
+ */
+export function faceEscapes(tris: readonly OTri[], face: OTri, offsetM = 1e-6): boolean {
+  const { n } = normalAndArea(face)
+  const c = {
+    x: (face.a.x + face.b.x + face.c.x) / 3 + n.x * offsetM,
+    y: (face.a.y + face.b.y + face.c.y) / 3 + n.y * offsetM,
+    z: (face.a.z + face.b.z + face.c.z) / 3 + n.z * offsetM,
+  }
+  return rayHits(tris, c, n).length === 0
+}
+
+/**
+ * Free distance from a point to the first surface in a direction.
+ *
+ * Used for clear-dimension measurement: stand in the middle of a room, look
+ * both ways, add the two answers. Returns Infinity when nothing is hit, which a
+ * caller should treat as a failure rather than a very large room.
+ */
+export function distanceToSurface(tris: readonly OTri[], origin: OVec, direction: OVec): number {
+  const hits = rayHits(tris, origin, norm(direction))
+  return hits.length === 0 ? Number.POSITIVE_INFINITY : hits[0].t
+}
