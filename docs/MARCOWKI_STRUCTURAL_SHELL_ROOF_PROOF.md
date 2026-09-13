@@ -16,7 +16,8 @@ same hashes and the same byte counts as the one already published.
 | --- | --- |
 | Branch | `claude/new-session-pvd4ik` |
 | Starting HEAD | `f73ae7f3a60f27ed98626c5bd384dc5d86bd7e31` (matched the expected SHA) |
-| Final HEAD | recorded in the follow-up commit below — a commit cannot name its own hash |
+| Stage commit | `b49aa4f1ca8c46e3babce4038ef241ef9f525964` |
+| Final HEAD | this commit — it changes only this line, so every gate above still describes the tree of `b49aa4f` |
 | Working tree at start | clean |
 
 ## 2. Files changed
