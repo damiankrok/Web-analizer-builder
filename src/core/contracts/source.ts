@@ -94,6 +94,36 @@ export type SourceAsset = {
    * available as well as what was used.
    */
   variants?: AssetVariant[]
+  /**
+   * The asset's roles in more than one dimension — STAGE WEB-PIVOT-03's
+   * contract, carried through to the analyzer by `toParsedSource`.
+   *
+   * `role` above answers several questions at once, so an asset can only ever
+   * be one thing: on Marcowki the dimensioned ground-floor plan is demoted to
+   * `PLAN_OTHER` because the area-labelled copy of the same floor takes
+   * `PLAN_GROUND`, and the copy carrying the dimension chains becomes
+   * unreachable. Anything that needs to distinguish a floor from a storey from
+   * an annotation variant reads this instead.
+   *
+   * Optional because a caller may still build a `ParsedSource` by hand; the
+   * selectors fall back to `role` when it is absent.
+   */
+  roles?: AssetRoleDimensions
+}
+
+/**
+ * The four role dimensions, as the analyzer sees them.
+ *
+ * A structural copy of `AssetRoles` from `source-package.ts`, kept here so that
+ * `contracts/source.ts` does not depend on the acquisition contract: the
+ * analyzer's input shape has never known about packages and does not start now.
+ */
+export type AssetRoleDimensions = {
+  document: string
+  storey: string
+  annotation: string
+  view: string
+  projection: string
 }
 
 export type FactUnit = 'm' | 'm2' | 'm3' | 'deg' | 'cm' | 'count' | 'text'

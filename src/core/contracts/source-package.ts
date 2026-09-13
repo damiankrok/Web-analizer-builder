@@ -494,6 +494,13 @@ export function toParsedSource(pkg: SourcePackage): ParsedSource {
       byteLength: a.byteLength,
       contentType: a.mediaType,
       sha256: a.contentHash,
+      roles: {
+        document: a.roles.document,
+        storey: a.roles.storey,
+        annotation: a.roles.annotation,
+        view: a.roles.view,
+        projection: a.roles.projection,
+      },
       variants: a.variants.map((v) => ({
         url: v.url,
         kind: v.channel === 'ANCHOR_HREF' || v.channel === 'VARIANT_CONVENTION' ? ('LIGHTBOX' as const) : ('PAGE' as const),

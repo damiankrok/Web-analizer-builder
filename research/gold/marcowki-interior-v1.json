@@ -1,0 +1,278 @@
+{
+  "schemaVersion": "marcowki-interior-1.0.0",
+  "id": "marcowki-interior-v1",
+  "kind": "GOLD_FIXTURE",
+  "notForProduction": "Development only. Nothing in the production analyzer reads this file, and no coordinate in it is available to the automatic URL->model flow.",
+  "project": "Dom w marcówkach (GE)",
+  "projectCode": "m2fa281446a8ca",
+  "sourcePackageId": "pkg_29b62d3714de8bc4",
+  "sourcePackageContentHash": "29b62d3714de8bc473b81f504518eb17efc4e6774dbde3448c86d839af4da940",
+
+  "method": {
+    "frame": "The STAGE WEB-PIVOT-02 building frame: +X east, +Y up, +Z south, origin at the outer face of the main body's north-west corner. Plan-right is +X and plan-down is +Z, which is how ARCHON draws these plans (north up, entrance facade at the bottom).",
+    "calibration": "scripts/plan-measure.ts, presets `ground` and `upper`. Ground: px 58..513 = 0..12.05 m across, px 259..735 = 0..12.60 m down (37.7593 / 37.7778 px per m, 0.05% apart). Upper: px 47..345.2 = 0..7.90 m across, px 195.3..670.8 = 0..12.60 m down (37.7468 / 37.7381 px per m, 0.02% apart). One pixel is 0.0265 m, which is the resolution of every SOURCE_DERIVED number below.",
+    "howWallsWereFound": "Every wall position was read twice: once as black ink in the raster (scripts/plan-measure.ts row/col/segments, luminance < 95 so that furniture and the watermark are excluded) and once, where a printed chain covers it, from the chain. Where the two disagree the chain wins and the disagreement is recorded in the wall's `source`.",
+    "sources": {
+      "groundDimensioned": "asset_8fda78f8654c, FLOOR_PLAN / GROUND / DIMENSIONED, 853x853, sha abfdb262",
+      "groundAreaLabels": "asset_23cd568671ca, FLOOR_PLAN / GROUND / AREA_LABELS, 853x853, sha 87ab5a71",
+      "upperDimensioned": "asset_8460d17163a4, FLOOR_PLAN / UPPER_ATTIC / DIMENSIONED, 853x853, sha 06af9e91",
+      "upperAreaLabels": "asset_d15e9abef990, FLOOR_PLAN / UPPER_ATTIC / AREA_LABELS, 853x853, sha a1b96ef3",
+      "roomTable": "the published room table carried in the SourcePackage (`rooms`)",
+      "shell": "research/gold/marcowki-exterior-shell-v1.json for every external face, level and the roof"
+    },
+    "publishedAreaConvention": "The published room areas are NOT raw plan-polygon areas. Two rooms settle it exactly: the attic Pokoj printed 344 x 449 has a raw area of 15.4456 m2 and is published as 15.13 m2, and the attic Pralnia printed 344 x 202 has a raw area of 6.9488 m2 and is published as 6.73 m2. Both are reproduced to the centimetre by A - P*d + 4*d^2 with d = 0.02 m, which is the plan area measured to finished surfaces with 20 mm of finish on every face. The cross-check therefore reports the raw polygon area, the same polygon inset by 20 mm, and the published figure, and classifies against the inset one. The rule is a finding about the source, not an input to any geometry here: no polygon was moved to make it fit.",
+    "statusMeaning": {
+      "SOURCE_EXACT": "a number printed on the drawing, read directly",
+      "SOURCE_CORROBORATED": "measured in the raster AND confirmed by a printed chain that closes on it",
+      "SOURCE_DERIVED": "measured in the raster with scripts/plan-measure.ts; no printed chain covers it",
+      "ASSUMPTION": "a modelling choice the drawing does not settle",
+      "UNRESOLVED": "the drawing does not settle it and no choice was made"
+    },
+    "note": "Every element here was transcribed by hand from the two published floor plans. Nothing in this file is produced by the automatic analyzer, and nothing in the automatic analyzer reads it."
+  },
+
+  "levels": [
+    {
+      "id": "ground",
+      "name": "Parter",
+      "fflM": 0.0,
+      "clearHeightM": 2.73,
+      "topKind": "FLAT",
+      "envelopes": [
+        { "id": "ground_main", "minX": 0.45, "maxX": 7.45, "minZ": 0.45, "maxZ": 12.15 },
+        { "id": "ground_garage", "minX": 7.9, "maxX": 11.6, "minZ": 5.55, "maxZ": 12.15 }
+      ],
+      "status": "SOURCE_DERIVED",
+      "source": "ground FFL 0.00 and upper FFL 3.06 from marcowki-exterior-shell-v1.json, less the 0.33 m upper floor slab: 3.06 - 0.33 = 2.73. The envelopes are the shell's inner faces (external wall 0.45 thick), and the garage's north wall at z 5.10 + 0.45."
+    },
+    {
+      "id": "upper",
+      "name": "Poddasze",
+      "fflM": 3.06,
+      "clearHeightM": 2.6,
+      "topKind": "ATTIC_SOFFIT",
+      "envelopes": [{ "id": "upper_main", "minX": 0.45, "maxX": 7.45, "minZ": 0.45, "maxZ": 12.15 }],
+      "status": "SOURCE_DERIVED",
+      "source": "upper FFL 3.06 from marcowki-exterior-shell-v1.json. `clearHeightM` is the height at which a partition is capped where the roof is higher than it; the roof's underside is 4.36 + tan(40 deg) * min(x, 7.90 - x), which is the same plane STAGE WEB-PIVOT-02A gave the attic side walls. 2.60 m is an ASSUMPTION: the plans dimension the 130 knee wall and the ridge, not the ceiling line."
+    }
+  ],
+
+  "chains": [
+    {
+      "id": "chain_ground_x_south",
+      "level": "ground",
+      "axis": "X",
+      "printed": [2.9, 1.9, 1.96],
+      "crossings": [0.12, 0.12],
+      "fromM": 0.45,
+      "toM": 7.45,
+      "status": "SOURCE_EXACT",
+      "source": "ground DIMENSIONED plan, the 290 | 190 | 196 chain across the entrance zone",
+      "note": "0.45 + 2.90 + 0.12 + 1.90 + 0.12 + 1.96 = 7.45, the inner face of the main body's east wall. It crosses gw_room_east and gw_boiler_west and closes on the printed 700 interior width."
+    },
+    {
+      "id": "chain_ground_z_west",
+      "level": "ground",
+      "axis": "Z",
+      "printed": [4.14, 2.65, 1.42, 3.25],
+      "crossings": [0.0, 0.12, 0.12],
+      "fromM": 0.45,
+      "toM": 12.15,
+      "status": "SOURCE_EXACT",
+      "source": "ground DIMENSIONED plan, the 414 | 265 | 142 | 325 chain down the west side",
+      "note": "0.45 + 4.14 + 2.65 + 0.12 + 1.42 + 0.12 + 3.25 = 12.15, the inner face of the south wall. The first boundary (4.14 from the north) is the notional salon/kitchen split in the open-plan space and crosses no wall; the other two land on gw_kitchen_south and gw_bath_south."
+    },
+    {
+      "id": "chain_upper_x_north",
+      "level": "upper",
+      "axis": "X",
+      "printed": [3.44, 3.44],
+      "crossings": [0.12],
+      "fromM": 0.45,
+      "toM": 7.45,
+      "status": "SOURCE_EXACT",
+      "source": "upper DIMENSIONED plan, the 344 | 344 chain across the two north bedrooms",
+      "note": "0.45 + 3.44 + 0.12 + 3.44 = 7.45. It fixes uw_corridor_west at x 3.89..4.01."
+    },
+    {
+      "id": "chain_upper_z_west",
+      "level": "upper",
+      "axis": "Z",
+      "printed": [4.49, 2.02, 2.48, 2.35],
+      "crossings": [0.12, 0.12, 0.12],
+      "fromM": 0.45,
+      "toM": 12.15,
+      "status": "SOURCE_EXACT",
+      "source": "upper DIMENSIONED plan, the 449 | 202 | 248 | 235 chain down the west side",
+      "note": "0.45 + 4.49 + 0.12 + 2.02 + 0.12 + 2.48 + 0.12 + 2.35 = 12.15. All three partitions it crosses were found independently in the raster at 4.947..5.027, 7.094..7.173 and 9.690..9.796."
+    },
+    {
+      "id": "chain_upper_x_south",
+      "level": "upper",
+      "axis": "X",
+      "printed": [2.9, 3.98],
+      "crossings": [0.12],
+      "fromM": 0.45,
+      "toM": 7.45,
+      "status": "SOURCE_EXACT",
+      "source": "upper DIMENSIONED plan, the 290 | 398 chain across the south rooms",
+      "note": "0.45 + 2.90 + 0.12 + 3.98 = 7.45. It fixes uw_room2_west at x 3.35..3.47."
+    }
+  ],
+
+  "walls": [
+    { "id": "gw_kitchen_south", "level": "ground", "axis": "X", "atM": 7.3, "thicknessM": 0.12, "fromM": 0.45, "toM": 4.11, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster z 7.253..7.359; the west Z chain closes 0.45+4.14+2.65 = 7.24 on its north face. Its east end is free and was measured at x 4.105." },
+    { "id": "gw_bath_east", "level": "ground", "axis": "Z", "atM": 3.42, "thicknessM": 0.12, "fromM": 7.36, "toM": 8.78, "kind": "PARTITION", "emit": true, "status": "SOURCE_DERIVED", "source": "raster x 3.363..3.469 at z 7.6; the column scan at x 3.42 shows ink 7.253..7.809 and 8.735..9.000, the two jambs of the bathroom door" },
+    { "id": "gw_bath_south", "level": "ground", "axis": "X", "atM": 8.84, "thicknessM": 0.12, "fromM": 0.45, "toM": 3.48, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster z 8.815..8.894, x 0.00..3.469; the west Z chain closes 7.36+1.42 = 8.78 on its north face" },
+    { "id": "gw_room_east", "level": "ground", "axis": "Z", "atM": 3.42, "thicknessM": 0.12, "fromM": 8.9, "toM": 12.15, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster x 3.363..3.469, z 9.926..12.600 plus the 8.735..9.000 jamb; the south X chain closes 0.45+2.90 = 3.35 on its west face" },
+    { "id": "gw_entry_north", "level": "ground", "axis": "X", "atM": 10.07, "thicknessM": 0.12, "fromM": 3.48, "toM": 5.37, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster z 10.032..10.112, x 3.363..4.211 and 5.138..5.482; the printed 203 closes 12.15-2.03 = 10.12 on its south face" },
+    { "id": "gw_boiler_north", "level": "ground", "axis": "X", "atM": 8.9, "thicknessM": 0.26, "fromM": 5.37, "toM": 7.45, "kind": "STRUCTURAL", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster z 8.788..9.026 at three separate columns, 0.24 m thick rather than the 0.12 of every other partition; the printed 312 closes 12.15-3.12 = 9.03 on its south face" },
+    { "id": "gw_boiler_west", "level": "ground", "axis": "Z", "atM": 5.43, "thicknessM": 0.12, "fromM": 9.03, "toM": 12.15, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster x 5.376..5.482, z 8.815..10.456 and 11.382..12.600; the south X chain closes 0.45+2.90+0.12+1.90 = 5.37 on its west face" },
+    { "id": "gw_pantry_north", "level": "ground", "axis": "X", "atM": 4.97, "thicknessM": 0.12, "fromM": 5.37, "toM": 7.45, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster z 4.950..5.082, x 5.376..7.892; the printed 446 closes 0.45+4.46 = 4.91 on its north face. The raster puts the same face 0.04 m lower, which is 1.5 px; the chain was taken." },
+    { "id": "gw_pantry_west", "level": "ground", "axis": "Z", "atM": 5.43, "thicknessM": 0.12, "fromM": 5.03, "toM": 6.16, "kind": "PARTITION", "emit": true, "status": "SOURCE_DERIVED", "source": "raster x 5.376..5.482; the column scan at x 5.43 shows ink 4.924..5.241 and 6.062..6.274, the two jambs of the pantry door. The wall is mostly doorway, which is why it carries little ink." },
+    { "id": "gw_pantry_south", "level": "ground", "axis": "X", "atM": 6.22, "thicknessM": 0.12, "fromM": 5.37, "toM": 6.44, "kind": "PARTITION", "emit": true, "status": "SOURCE_DERIVED", "source": "raster z 6.168..6.274, x 5.403..6.435. Its east end is free: the pantry's south-east corner is the stair, not a wall." },
+    { "id": "gw_house_garage", "level": "ground", "axis": "Z", "atM": 7.675, "thicknessM": 0.45, "fromM": 5.55, "toM": 12.15, "kind": "STRUCTURAL", "emit": false, "status": "SOURCE_CORROBORATED", "source": "the main body's east wall, already emitted by the STAGE WEB-PIVOT-02 exterior shell. It is named here, and not emitted again, because it is the host of the kotlownia/garage door and the boundary of two interior rooms." },
+
+    { "id": "uw_corridor_west", "level": "upper", "axis": "Z", "atM": 3.95, "thicknessM": 0.12, "fromM": 0.45, "toM": 8.78, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster x 3.894..3.974 at z 2.0, 3.55 and 5.09; the north X chain closes 0.45+3.44 = 3.89 on its west face. The column scan at x 3.9 shows ink 0.00..3.967, 4.735..5.504 and 6.405..7.756, which are the wall and the three door jambs." },
+    { "id": "uw_pokoj_ne_south", "level": "upper", "axis": "X", "atM": 3.76, "thicknessM": 0.12, "fromM": 4.01, "toM": 5.28, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster z 3.702..3.781 at x 4.05; the printed 325 depth of the north-east Pokoj closes 0.45+3.25 = 3.70 on its north face. The row scan at z 3.70 shows ink 3.894..4.159 and 5.007..5.272, the two jambs." },
+    { "id": "uw_garderoba_ne_west", "level": "upper", "axis": "Z", "atM": 5.22, "thicknessM": 0.12, "fromM": 3.82, "toM": 5.03, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster x 5.166..5.272 at z 3.85 and 4.3; the printed 217 width of the Garderoba closes 7.45-2.17 = 5.28 on its east face" },
+    { "id": "uw_pokoj_nw_south", "level": "upper", "axis": "X", "atM": 5.0, "thicknessM": 0.12, "fromM": 0.45, "toM": 3.89, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster z 4.947..5.027, x 0.000..3.974; the west Z chain closes 0.45+4.49 = 4.94 on its north face" },
+    { "id": "uw_pralnia_south", "level": "upper", "axis": "X", "atM": 7.14, "thicknessM": 0.12, "fromM": 0.45, "toM": 3.89, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster z 7.094..7.173, x 0.000..3.974; the west Z chain closes 5.06+2.02 = 7.08 on its north face" },
+    { "id": "uw_bath_south", "level": "upper", "axis": "X", "atM": 9.74, "thicknessM": 0.12, "fromM": 0.45, "toM": 3.35, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster z 9.690..9.796, x 0.000..3.444; the west Z chain closes 7.20+2.48 = 9.68 on its north face" },
+    { "id": "uw_stair_north", "level": "upper", "axis": "X", "atM": 5.09, "thicknessM": 0.12, "fromM": 5.16, "toM": 7.45, "kind": "PARTITION", "emit": true, "status": "SOURCE_DERIVED", "source": "raster z 5.027..5.133 at x 6.5 and 7.0, x 5.166..7.895 at z 5.09" },
+    { "id": "uw_corridor_south", "level": "upper", "axis": "X", "atM": 8.84, "thicknessM": 0.12, "fromM": 3.35, "toM": 7.45, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster z 8.790..8.896 at x 5.0, 6.5 and 7.0, x 3.338..4.080 and 5.007..7.895 at z 8.84; the printed 325 depth of the south Pokoj closes 12.15-3.25 = 8.90 on its south face" },
+    { "id": "uw_room2_west", "level": "upper", "axis": "Z", "atM": 3.41, "thicknessM": 0.12, "fromM": 8.9, "toM": 12.15, "kind": "PARTITION", "emit": true, "status": "SOURCE_CORROBORATED", "source": "raster x 3.338..3.444 at z 9.0, 9.9 and 10.5; the south X chain closes 0.45+2.90 = 3.35 on its west face. The column scan at x 3.42 shows ink 8.710..10.697 and 11.519..12.605, the two jambs of the Garderoba door." },
+    { "id": "uw_chimney", "level": "upper", "axis": "X", "atM": 4.725, "thicknessM": 0.61, "fromM": 5.5, "toM": 6.11, "kind": "STRUCTURAL", "emit": true, "status": "SOURCE_DERIVED", "source": "the flue block inside the north-east Garderoba: raster z 4.417..5.133 at x 5.6 and 6.0, a 0.61 x 0.61 solid. It is modelled as a wall because that is what it is: a piece of fabric a room polygon has to go round." }
+  ],
+
+  "openings": [
+    { "id": "gd_bathroom", "level": "ground", "wallId": "gw_bath_east", "fromM": 7.81, "toM": 8.71, "kind": "DOOR", "sillM": 0.0, "headM": 2.0, "connects": ["g_bathroom", "g_hall"], "status": "SOURCE_DERIVED", "source": "the gap between the two ink runs in the column scan at x 3.42, and the door swing drawn into the hall" },
+    { "id": "gd_room", "level": "ground", "wallId": "gw_room_east", "fromM": 9.0, "toM": 9.9, "kind": "DOOR", "sillM": 0.0, "headM": 2.0, "connects": ["g_room", "g_hall"], "status": "SOURCE_DERIVED", "source": "the 9.000..9.926 gap in the column scan at x 3.42, and the door swing drawn into the Pokoj" },
+    { "id": "gd_entry", "level": "ground", "wallId": "gw_entry_north", "fromM": 4.21, "toM": 5.14, "kind": "DOOR", "sillM": 0.0, "headM": 2.0, "connects": ["g_entry", "g_hall"], "status": "SOURCE_DERIVED", "source": "the 4.211..5.138 gap in the row scan at z 10.07, and the door leaf drawn open towards the hall" },
+    { "id": "gd_boiler", "level": "ground", "wallId": "gw_boiler_west", "fromM": 10.46, "toM": 11.36, "kind": "DOOR", "sillM": 0.0, "headM": 2.0, "connects": ["g_boiler", "g_entry"], "status": "SOURCE_DERIVED", "source": "the 10.456..11.382 gap in the column scan at x 5.43, and the door swing drawn into the kotlownia. At that z the wall separates the kotlownia from the wiatrolap, not from the hall: the boiler room is entered from the entrance lobby." },
+    { "id": "gd_pantry", "level": "ground", "wallId": "gw_pantry_west", "fromM": 5.24, "toM": 6.04, "kind": "DOOR", "sillM": 0.0, "headM": 2.0, "connects": ["g_pantry", "g_hall"], "status": "SOURCE_DERIVED", "source": "the 5.241..6.062 gap in the column scan at x 5.43, and the door swing drawn into the hall" },
+    { "id": "gd_garage", "level": "ground", "wallId": "gw_house_garage", "fromM": 10.46, "toM": 11.38, "kind": "DOOR", "sillM": 0.0, "headM": 2.0, "connects": ["g_boiler", "g_garage"], "status": "SOURCE_DERIVED", "source": "the 10.456..11.382 gap in the column scans at x 7.6 and 7.75, straight through the main body's east wall. Its host is the exterior shell, so this stage records the opening and its adjacency but does not cut it: the shell's openings are STAGE WEB-PIVOT-05." },
+
+    { "id": "ud_pokoj_nw", "level": "upper", "wallId": "uw_corridor_west", "fromM": 3.94, "toM": 4.77, "kind": "DOOR", "sillM": 0.0, "headM": 2.0, "connects": ["u_pokoj_nw", "u_corridor"], "status": "SOURCE_DERIVED", "source": "the 3.967..4.735 gap in the column scan at x 3.9, and the door swing drawn into the Pokoj" },
+    { "id": "ud_pralnia", "level": "upper", "wallId": "uw_corridor_west", "fromM": 5.64, "toM": 6.4, "kind": "DOOR", "sillM": 0.0, "headM": 2.0, "connects": ["u_pralnia", "u_corridor"], "status": "SOURCE_DERIVED", "source": "the 5.504..6.405 gap in the column scan at x 3.9, and the door swing drawn into the Pralnia" },
+    { "id": "ud_bathroom", "level": "upper", "wallId": "uw_corridor_west", "fromM": 7.83, "toM": 8.58, "kind": "DOOR", "sillM": 0.0, "headM": 2.0, "connects": ["u_bathroom", "u_corridor"], "status": "SOURCE_DERIVED", "source": "the gap below 7.756 in the column scan at x 3.9, and the door swing drawn into the corridor" },
+    { "id": "ud_pokoj_ne", "level": "upper", "wallId": "uw_pokoj_ne_south", "fromM": 4.2, "toM": 5.0, "kind": "DOOR", "sillM": 0.0, "headM": 2.0, "connects": ["u_pokoj_ne", "u_corridor"], "status": "SOURCE_DERIVED", "source": "the 4.159..5.007 gap in the row scan at z 3.70, and the door leaf drawn open into the Pokoj" },
+    { "id": "ud_pokoj_s", "level": "upper", "wallId": "uw_corridor_south", "fromM": 4.08, "toM": 4.98, "kind": "DOOR", "sillM": 0.0, "headM": 2.0, "connects": ["u_corridor", "u_pokoj_s"], "status": "SOURCE_DERIVED", "source": "the 4.080..5.007 gap in the row scan at z 8.84, and the door swing drawn into the Pokoj" },
+    { "id": "ud_garderoba_sw", "level": "upper", "wallId": "uw_room2_west", "fromM": 10.7, "toM": 11.52, "kind": "DOOR", "sillM": 0.0, "headM": 2.0, "connects": ["u_garderoba_sw", "u_pokoj_s"], "status": "SOURCE_DERIVED", "source": "the 10.697..11.519 gap in the column scan at x 3.42, and the door swing drawn into the Garderoba" }
+  ],
+
+  "rooms": [
+    { "id": "g_salon", "level": "ground", "envelopeId": "ground_main", "label": "Salon + Jadalnia", "publishedIndex": 4, "publishedAreaM2": 29.52,
+      "polygon": [[0.45, 0.45], [7.45, 0.45], [7.45, 4.91], [4.11, 4.91], [4.11, 4.59], [0.45, 4.59]],
+      "notionalEdges": [{ "from": [4.11, 4.91], "to": [5.37, 4.91], "toRoomId": "g_hall" }, { "from": [4.11, 4.91], "to": [4.11, 4.59], "toRoomId": "g_hall" }, { "from": [4.11, 4.59], "to": [0.45, 4.59], "toRoomId": "g_kitchen" }],
+      "status": "SOURCE_CORROBORATED", "source": "the printed 700 fixes the width, the printed 414 the notional kitchen split on the west and the printed 446 the south boundary on the east. The east part's south edge is gw_pantry_north's north face." },
+    { "id": "g_kitchen", "level": "ground", "envelopeId": "ground_main", "label": "Kuchnia", "publishedIndex": 3, "publishedAreaM2": 9.63,
+      "polygon": [[0.45, 4.59], [4.11, 4.59], [4.11, 7.24], [0.45, 7.24]],
+      "notionalEdges": [{ "from": [0.45, 4.59], "to": [4.11, 4.59], "toRoomId": "g_salon" }, { "from": [4.11, 4.59], "to": [4.11, 7.24], "toRoomId": "g_hall" }],
+      "status": "SOURCE_CORROBORATED", "source": "open to the salon and to the hall; the printed 414 | 265 chain fixes both z boundaries and the east boundary is the free end of gw_kitchen_south at x 4.105" },
+    { "id": "g_hall", "level": "ground", "envelopeId": "ground_main", "label": "Hol", "publishedIndex": 2, "publishedAreaM2": 9.18,
+      "polygon": [[4.11, 4.91], [5.37, 4.91], [5.37, 6.28], [6.44, 6.28], [6.44, 6.16], [7.45, 6.16], [7.45, 6.79], [5.37, 6.79], [5.37, 10.01], [3.48, 10.01], [3.48, 7.36], [4.11, 7.36]],
+      "notionalEdges": [{ "from": [4.11, 4.91], "to": [5.37, 4.91], "toRoomId": "g_salon" }, { "from": [6.44, 6.16], "to": [7.45, 6.16], "toRoomId": "g_pantry" }, { "from": [7.45, 6.79], "to": [5.37, 6.79], "toRoomId": "g_stair_void" }, { "from": [5.37, 6.79], "to": [5.37, 8.77], "toRoomId": "g_stair_void" }, { "from": [4.11, 7.36], "to": [4.11, 4.91], "toRoomId": "g_kitchen" }],
+      "status": "SOURCE_DERIVED", "source": "the circulation space that remains between the measured walls once the stair footprint is taken out. Its west edge against the kitchen is notional." },
+    { "id": "g_pantry", "level": "ground", "envelopeId": "ground_main", "label": "Spizarnia", "publishedIndex": 5, "publishedAreaM2": 1.44, "publishedGrossAreaM2": 2.42,
+      "polygon": [[5.49, 5.03], [7.45, 5.03], [7.45, 6.16], [5.49, 6.16]],
+      "notionalEdges": [{ "from": [7.45, 6.16], "to": [6.44, 6.16], "toRoomId": "g_hall" }],
+      "status": "SOURCE_DERIVED", "source": "bounded west by gw_pantry_west, north by gw_pantry_north and south by gw_pantry_south, whose east end stops at x 6.435: the pantry's south-east corner is open to the stair, which is also why the published net 1.44 is well below the published gross 2.42." },
+    { "id": "g_bathroom", "level": "ground", "envelopeId": "ground_main", "label": "Lazienka", "publishedIndex": 6, "publishedAreaM2": 3.95,
+      "polygon": [[0.45, 7.36], [3.36, 7.36], [3.36, 8.78], [0.45, 8.78]],
+      "status": "SOURCE_CORROBORATED", "source": "the printed 142 fixes the depth; the east face is gw_bath_east, measured" },
+    { "id": "g_room", "level": "ground", "envelopeId": "ground_main", "label": "Pokoj", "publishedIndex": 7, "publishedAreaM2": 9.18,
+      "polygon": [[0.45, 8.9], [3.36, 8.9], [3.36, 12.15], [0.45, 12.15]],
+      "status": "SOURCE_CORROBORATED", "source": "the printed 290 fixes the width and the printed 325 the depth" },
+    { "id": "g_entry", "level": "ground", "envelopeId": "ground_main", "label": "Wiatrolap", "publishedIndex": 1, "publishedAreaM2": 3.7,
+      "polygon": [[3.48, 10.13], [5.37, 10.13], [5.37, 12.15], [3.48, 12.15]],
+      "status": "SOURCE_CORROBORATED", "source": "the printed 190 fixes the width and the printed 203 the depth" },
+    { "id": "g_boiler", "level": "ground", "envelopeId": "ground_main", "label": "Kotlownia", "publishedIndex": 8, "publishedAreaM2": 5.8,
+      "polygon": [[5.49, 9.03], [7.45, 9.03], [7.45, 12.15], [5.49, 12.15]],
+      "status": "SOURCE_CORROBORATED", "source": "the printed 196 fixes the width and the printed 312 the depth" },
+    { "id": "g_garage", "level": "ground", "envelopeId": "ground_garage", "label": "Garaz", "publishedIndex": 9, "publishedAreaM2": 24.1,
+      "polygon": [[7.9, 5.55], [11.6, 5.55], [11.6, 12.15], [7.9, 12.15]],
+      "status": "SOURCE_CORROBORATED", "source": "between the main body's east wall and the east external wall; the printed 660 fixes the depth and the 510 | 750 split of the printed 1260 fixes the north wall at z 5.10" },
+
+    { "id": "u_pokoj_nw", "level": "upper", "envelopeId": "upper_main", "label": "Pokoj", "publishedIndex": 6, "publishedAreaM2": 12.57, "publishedGrossAreaM2": 15.13,
+      "polygon": [[0.45, 0.45], [3.89, 0.45], [3.89, 4.94], [0.45, 4.94]],
+      "status": "SOURCE_EXACT", "source": "the printed 344 fixes the width and the printed 449 the depth" },
+    { "id": "u_pokoj_ne", "level": "upper", "envelopeId": "upper_main", "label": "Pokoj", "publishedIndex": 7, "publishedAreaM2": 9.02, "publishedGrossAreaM2": 10.88,
+      "polygon": [[4.01, 0.45], [7.45, 0.45], [7.45, 3.7], [4.01, 3.7]],
+      "notionalEdges": [{ "from": [7.45, 3.7], "to": [5.28, 3.7], "toRoomId": "u_garderoba_ne" }],
+      "status": "SOURCE_EXACT", "source": "the printed 344 fixes the width and the printed 325 the depth. Its south edge east of x 5.28 carries no wall: the Garderoba opens off the bedroom." },
+    { "id": "u_garderoba_ne", "level": "upper", "envelopeId": "upper_main", "label": "Garderoba", "publishedIndex": 8, "publishedAreaM2": 1.62, "publishedGrossAreaM2": 2.38,
+      "polygon": [[5.28, 3.7], [7.45, 3.7], [7.45, 5.03], [6.11, 5.03], [6.11, 4.42], [5.5, 4.42], [5.5, 5.03], [5.28, 5.03]],
+      "notionalEdges": [{ "from": [5.28, 3.7], "to": [7.45, 3.7], "toRoomId": "u_pokoj_ne" }],
+      "status": "SOURCE_CORROBORATED", "source": "the printed 217 fixes the width; the depth 3.70..5.03 runs from the north Pokoj's printed 325 boundary to uw_stair_north, and the notch is the measured flue block" },
+    { "id": "u_pralnia", "level": "upper", "envelopeId": "upper_main", "label": "Pralnia", "publishedIndex": 5, "publishedAreaM2": 5.59, "publishedGrossAreaM2": 6.73,
+      "polygon": [[0.45, 5.06], [3.89, 5.06], [3.89, 7.08], [0.45, 7.08]],
+      "status": "SOURCE_EXACT", "source": "the printed 202 fixes the depth; the width follows the printed 344 column" },
+    { "id": "u_bathroom", "level": "upper", "envelopeId": "upper_main", "label": "Lazienka", "publishedIndex": 4, "publishedAreaM2": 6.4, "publishedGrossAreaM2": 7.81,
+      "polygon": [[0.45, 7.2], [3.89, 7.2], [3.89, 8.78], [3.35, 8.78], [3.35, 9.68], [0.45, 9.68]],
+      "status": "SOURCE_CORROBORATED", "source": "the printed 248 fixes the depth; the east face steps from uw_corridor_west to uw_room2_west at uw_corridor_south, which is where the measured ink steps" },
+    { "id": "u_garderoba_sw", "level": "upper", "envelopeId": "upper_main", "label": "Garderoba", "publishedIndex": 3, "publishedAreaM2": 5.19, "publishedGrossAreaM2": 6.53,
+      "polygon": [[0.45, 9.8], [3.35, 9.8], [3.35, 12.15], [0.45, 12.15]],
+      "status": "SOURCE_EXACT", "source": "the printed 290 fixes the width and the printed 235 the depth" },
+    { "id": "u_pokoj_s", "level": "upper", "envelopeId": "upper_main", "label": "Pokoj", "publishedIndex": 2, "publishedAreaM2": 10.25, "publishedGrossAreaM2": 11.88,
+      "polygon": [[3.47, 8.9], [7.45, 8.9], [7.45, 12.15], [3.47, 12.15]],
+      "status": "SOURCE_EXACT", "source": "the printed 398 fixes the width and the printed 325 the depth" },
+    { "id": "u_corridor", "level": "upper", "envelopeId": "upper_main", "label": "Korytarz", "publishedIndex": 1, "publishedAreaM2": 6.17,
+      "polygon": [[4.01, 3.82], [5.16, 3.82], [5.16, 8.78], [4.01, 8.78]],
+      "notionalEdges": [{ "from": [5.16, 5.15], "to": [5.16, 8.78], "toRoomId": "u_stairs" }],
+      "status": "SOURCE_DERIVED", "source": "the circulation space between uw_corridor_west and the Garderoba/stair walls. Its boundary with the stair compartment is not drawn." },
+    { "id": "u_stairs", "level": "upper", "envelopeId": "upper_main", "label": "Schody", "publishedIndex": 9, "publishedAreaM2": 5.63,
+      "polygon": [[5.16, 5.15], [7.45, 5.15], [7.45, 8.78], [5.16, 8.78]],
+      "notionalEdges": [{ "from": [5.16, 8.78], "to": [5.16, 5.15], "toRoomId": "u_corridor" }],
+      "status": "SOURCE_DERIVED", "source": "the stair compartment between uw_stair_north and uw_corridor_south, east of the corridor. The polygon is the whole compartment, including the floor void; the published Schody figure is smaller and is discussed in the area cross-check." }
+  ],
+
+  "stairs": [
+    {
+      "id": "stair_main",
+      "fromLevel": "ground",
+      "toLevel": "upper",
+      "footprint": [[5.37, 6.79], [7.45, 6.79], [7.45, 8.77], [5.37, 8.77]],
+      "slabVoid": [[5.37, 6.79], [7.45, 6.79], [7.45, 8.77], [5.37, 8.77]],
+      "riseFromM": 0.0,
+      "riseToM": 3.06,
+      "risers": 17,
+      "shape": "U_TWO_FLIGHTS",
+      "flights": [
+        { "id": "flight_lower", "axis": "X", "direction": 1, "bandFromM": 7.78, "bandToM": 8.77, "runFromM": 5.37, "runToM": 7.45, "firstRiser": 1, "risers": 8 },
+        { "id": "flight_upper", "axis": "X", "direction": -1, "bandFromM": 6.79, "bandToM": 7.78, "runFromM": 7.45, "runToM": 5.37, "firstRiser": 9, "risers": 9 }
+      ],
+      "status": "SOURCE_DERIVED",
+      "source": "The shaft is the 2.08 x 1.98 m zone east of the hall between gw_pantry_south (measured free end at x 6.435, so the shaft's north edge is the measured top-step line at z 6.78..6.99) and gw_boiler_north's north face at z 8.77. The ground plan draws tread nosings running across X in the southern band and across Z at the east end, which is a U with winders; the upper plan's Schody compartment sits directly above. Subtracting this footprint from the circulation space leaves 9.28 m2 against the published Hol of 9.18 m2, which is the independent check that the footprint is the right size and in the right place.",
+      "simplification": "Modelled as two straight flights joined at the east end, 17 risers of 0.18 m. The drawing's winders are NOT represented: the turn is modelled as a change of flight rather than as tapered treads. This is a stated simplification, not a reading of the source."
+    }
+  ],
+
+  "slabs": [
+    {
+      "id": "slab_upper_floor",
+      "topLevel": "upper",
+      "thicknessM": 0.33,
+      "footprint": [[0.0, 0.0], [7.9, 0.0], [7.9, 12.6], [0.0, 12.6]],
+      "voids": ["stair_main"],
+      "status": "SOURCE_EXACT",
+      "source": "slab.upperThicknessM and the main body footprint from marcowki-exterior-shell-v1.json; the void is the stair's own polygon"
+    }
+  ],
+
+  "observedButNotModelled": [
+    "Winders at the turn of the stair: the ground plan draws tapered treads, and the model uses two straight flights.",
+    "The balcony beyond the south wall on the upper floor, which is why the upper plan is drawn deeper than the building.",
+    "Fitted furniture, sanitary ware, the fireplace insert and the car, all of which the plans draw and none of which is building fabric.",
+    "Window and door callouts on the external walls (90/230, 140/140, 234/303, 78/118, 270/320 and the rest), which belong to the exterior shell and to a later stage.",
+    "The ground-floor flue block beside the fireplace, which the raster shows at roughly x 5.39..5.97, z 4.51..4.99 and which straddles the salon's south boundary."
+  ],
+
+  "unresolved": [
+    "The exact west edge of the ground-floor hall where it meets the open-plan kitchen: the drawing prints no chain across it, and 4.11 m is the free end of gw_kitchen_south rather than a measured room boundary.",
+    "The ground-floor pantry's published gross area of 2.42 m2 against the 2.21 m2 the measured walls enclose: the drawing shows the stair soffit over its south-east corner, and the published figure appears to include floor the model gives to the stair.",
+    "The boundary between the upper Korytarz and Schody, which no wall draws; the model splits them at uw_stair_north's west end and the published pair 6.17 + 5.63 does not match the pair the model derives.",
+    "The published net areas of the attic rooms (12.57 against 15.13 and so on), which apply a headroom rule the plans do not state. The model reports the raw and finished plan areas and never the net one.",
+    "Whether the kotlownia/garage door is a fire door and how it is detailed; only its position is read here, and it is not cut, because its host is the STAGE WEB-PIVOT-02 exterior shell."
+  ]
+}

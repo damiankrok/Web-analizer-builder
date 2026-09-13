@@ -9,6 +9,7 @@ import { classifyProjection, type ProjectionClassification } from '../projection
 import { parseTechnology } from '../source/facts.js'
 import { analyseSectionGeometry, buildSectionAnalysis, gableSpanFromSection, sectionMassWidths, type SectionGeometry } from '../scaffold/section.js'
 import { wallMask, planExtent, fitFootprint, buildPlanAnalysis, type FootprintFit } from '../scaffold/plan.js'
+import { selectPlanAsset } from '../dimensions/plan-select.js'
 import { readDimensions, type DimensionReading } from '../scaffold/dimensions.js'
 import { buildAudit, type AuditInput, type MetricAudit } from '../scaffold/audit.js'
 import { analyseElevation, facadeOf, type ElevationMeasurement } from '../scaffold/elevation.js'
@@ -166,7 +167,26 @@ export function buildMetricScaffold(
   let footprintFit: FootprintFit | null = null
   let planChainWidthM: number | null = null
   let planChainDepthM: number | null = null
-  const groundPlan = analysed.find((a) => a.asset.role === 'PLAN_GROUND')
+  // Which copy of the ground floor carries the dimension chains — STAGE
+  // WEB-PIVOT-04. Selecting by the single-enum role pointed the reader at the
+  // area-labelled copy, which is the one published copy of this floor with no
+  // dimensions printed on it.
+  const groundSelection = selectPlanAsset(
+    analysed.map((a) => a.asset),
+    'GROUND',
+  )
+  const upperSelection = selectPlanAsset(
+    analysed.map((a) => a.asset),
+    'UPPER_ATTIC',
+  )
+  for (const [storey, sel] of [
+    ['ground', groundSelection],
+    ['upper', upperSelection],
+  ] as const) {
+    if (sel) notes.push(`${storey} plan selected by ${sel.by}: ${sel.reason}`)
+    else notes.push(`no ${storey} floor plan published`)
+  }
+  const groundPlan = groundSelection ? analysed.find((a) => a.asset.id === groundSelection.asset.id) : undefined
   if (groundPlan) {
     const image = images.get(groundPlan.asset.id)
     if (image) {
