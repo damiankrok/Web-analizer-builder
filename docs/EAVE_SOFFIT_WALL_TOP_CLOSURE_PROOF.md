@@ -8,7 +8,7 @@ previous stage built (measured — see **Gates**).
 | | |
 | --- | --- |
 | Starting HEAD | `22045ad215c8e49cf930d44d4af2dc025ade0209` |
-| Final HEAD | `__FINAL_HEAD__` |
+| Final HEAD | `73a2010b0ca87429aec9c314c3d51387f93aef58` |
 | Branch | `claude/new-session-pvd4ik` |
 | Previous stage | STAGE WEB-PIVOT-02 — Marcowki structural shell + roof compiler |
 | Result | `PASS_STAGE_WEB_PIVOT_02A_EAVE_SOFFIT_CLOSURE` |
