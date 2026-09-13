@@ -582,7 +582,7 @@ const needsProfiledPath = (w: WallSpec, openings: readonly OpeningSpec[]): boole
 const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > hi ? hi : x)
 
 /**
- * A wall whose top is a polyline, whose opening may have a raked head, or both.
+ * A wall whose top is a polyline, whose openings may have raked heads, or both.
  *
  * ## Why this is a second path and not a generalisation
  *
@@ -595,22 +595,43 @@ const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > 
  * ## How it stays watertight with slanted edges
  *
  * The face is tiled in vertical strips rather than on a 2D grid, and every
- * strip is split into the **same three bands** at both of its ends:
+ * strip is split into the **same bands** at both of its ends:
  *
- *     0  ..  sill  ..  head(u)  ..  top(u)
+ *     0  ..  sill_1 .. head_1 ..  sill_2 .. head_2 ..  …  ..  top(u)
  *
- * The two middle boundaries come from the opening — clamped into `[0, top(u)]`
- * so they stay ordered — and they are computed at *every* strip boundary, not
- * only inside the opening. That is the whole trick: two neighbouring strips
- * always cut their shared vertical edge at the same four heights, so no face
- * ever meets the middle of another face's edge. Outside the opening's span the
- * middle band is simply solid; where a band collapses to zero height the quad
- * degenerates to a triangle or vanishes, and both cases keep the edge count
- * right.
+ * Every boundary is a function of `u` alone, evaluated at each strip edge, so
+ * two neighbouring strips always cut their shared vertical edge at identical
+ * heights and no face ever meets the middle of another face's edge. Where a
+ * band collapses to zero height the quad degenerates to a triangle or vanishes,
+ * and both cases keep the edge count right.
  *
- * At most one opening per wall takes this path. Two raked heads could cross
- * each other and reorder the bands, which would silently break the pairing, so
- * a second opening is refused by name instead.
+ * ## Several openings on one wall — STAGE WEB-PIVOT-05
+ *
+ * STAGE WEB-PIVOT-02 compiled exactly one opening here, because two raked heads
+ * can cross each other and reorder the bands the tiling pairs up. Marcowki's
+ * rear gable carries two windows whose heads rake in opposite directions, so
+ * the restriction had to go — but the reason for it had to be answered rather
+ * than ignored:
+ *
+ *   - **Outside its own span an opening contributes nothing.** `headAt`
+ *     extrapolates a raked head linearly, and a head extrapolated across the
+ *     whole wall is meaningless and can sit above the wall top. Each opening's
+ *     sill and head therefore collapse to the wall base outside `[offset,
+ *     offset + width]`, which is a function of `u` alone and so still agrees
+ *     between neighbouring strips.
+ *   - **The boundaries are sorted, and they cannot reorder.** Bands are paired
+ *     between the two ends of a strip by index, so a pair of boundaries that
+ *     swapped places *inside* a strip would twist the quad between them. They
+ *     cannot: `sharesOneTiling` refuses a wall whose openings overlap along
+ *     `u`, and with the collapse above at most one opening is non-degenerate at
+ *     any `u`. Every other opening contributes the pair `(0, 0)`, and a strip's
+ *     two ends therefore differ only in that one opening's own two boundaries,
+ *     which are `sill <= head` by construction at both ends. A sorted list
+ *     whose only moving pair stays ordered cannot invert.
+ *
+ * Voidness is then decided by asking, at both ends of the strip, whether the
+ * band's midpoint lies between the active opening's own sill and head — which
+ * is a question about that opening alone and needs no global ordering at all.
  */
 function compileProfiledWall(
   w: WallSpec,
@@ -623,21 +644,7 @@ function compileProfiledWall(
   const T = w.thicknessM
   const A0 = extent.a0
   const A1 = extent.a1
-  /**
-   * The openings cut into this wall, and the one whose sill and head set the
-   * band schedule.
-   *
-   * STAGE WEB-PIVOT-02 compiled exactly one opening on this path, because two
-   * *raked* heads can cross each other and reorder the bands the tiling pairs
-   * up. STAGE WEB-PIVOT-04 needs three doorways on one attic corridor wall, and
-   * those have level heads at a common sill and a common height — so the three
-   * band boundaries are the same constants the whole length of the wall, every
-   * strip is split at the same four heights, and the pairing cannot reorder.
-   * `compileWalls` checks exactly that precondition before calling here; where
-   * it does not hold it still passes one opening and says so, as before.
-   */
   const holes = openings
-  const schedule = openings[0]
   /**
    * The roof this wall's top dies into, when it has one.
    *
@@ -649,21 +656,39 @@ function compileProfiledWall(
    */
   const soffitId = w.topProfile?.kind === 'PLANE' ? w.topProfile.sourceRoofId : undefined
 
+  /** True when `u` lies within an opening's own span, edges included. */
+  const spans = (h: OpeningSpec, u: number): boolean =>
+    u >= h.offsetM - BREAK_EPS && u <= h.offsetM + h.widthM + BREAK_EPS
+
   /**
-   * The three band boundaries at `(u, c)`, always non-decreasing, always four
-   * long.
+   * One opening's two band boundaries at `(u, c)`, clamped into the wall.
    *
-   * Only the last boundary — the wall top — can depend on `c`, and only under a
-   * `PLANE` profile. The sill and the head are opening coordinates, which this
-   * stage does not touch: a window is at the same height on both faces of the
-   * wall, whatever the roof above it is doing.
+   * Outside the opening's own span both collapse to the wall base: an opening
+   * has no sill and no head where it does not exist, and a raked head
+   * extrapolated beyond its own width is not a number this compiler should act
+   * on.
    */
-  const bands = (u: number, c: number): [number, number, number, number] => {
+  const pair = (h: OpeningSpec, u: number, t0: number): [number, number] => {
+    if (!spans(h, u)) return [0, 0]
+    const sill = clamp(h.sillM, 0, t0)
+    const head = clamp(Math.max(headAt(h, u), h.sillM), sill, t0)
+    return [sill, head]
+  }
+
+  /** Band boundaries at `(u, c)`: the wall base, every opening's pair, the top. */
+  const rawBands = (u: number, c: number): number[] => {
     const t0 = wallTopAt(w, u, c)
-    if (!schedule) return [0, t0, t0, t0]
-    const sill = clamp(schedule.sillM, 0, t0)
-    const head = clamp(Math.max(headAt(schedule, u), schedule.sillM), sill, t0)
-    return [0, sill, head, t0]
+    const bs: number[] = [0]
+    for (const h of holes) bs.push(...pair(h, u, t0))
+    bs.push(t0)
+    return bs
+  }
+
+  /** The band boundaries at `(u, c)`, in order, base first and top last. */
+  const bands = (u: number, c: number): number[] => {
+    const raw = rawBands(u, c)
+    const mid = raw.slice(1, raw.length - 1).sort((a, b) => a - b)
+    return [raw[0], ...mid, raw[raw.length - 1]]
   }
 
   const aBreaks = breaks(
@@ -700,6 +725,8 @@ function compileProfiledWall(
   const activeHole = (u0: number, u1: number): OpeningSpec | undefined =>
     holes.find((h) => u0 >= h.offsetM - BREAK_EPS && u1 <= h.offsetM + h.widthM + BREAK_EPS)
 
+  const NB = 2 * holes.length + 1
+
   for (let i = 0; i + 1 < aBreaks.length; i++) {
     const u0 = aBreaks[i]
     const u1 = aBreaks[i + 1]
@@ -708,10 +735,20 @@ function compileProfiledWall(
     const LI = bands(u0, T)
     const RI = bands(u1, T)
     const active = activeHole(u0, u1)
-    const void1 = active !== undefined
+    // Which band is the hole. Both ends have to agree, or the quad between them
+    // would span two different bands; they do agree because the boundaries are
+    // one function of `u` and the caller has checked the sort order.
+    const voidBand = (j: number): boolean => {
+      if (!active) return false
+      const [s0, h0] = pair(active, u0, wallTopAt(w, u0, 0))
+      const [s1, h1] = pair(active, u1, wallTopAt(w, u1, 0))
+      const m0 = (LO[j] + LO[j + 1]) / 2
+      const m1 = (RO[j] + RO[j + 1]) / 2
+      return m0 > s0 - BREAK_EPS && m0 < h0 + BREAK_EPS && m1 > s1 - BREAK_EPS && m1 < h1 + BREAK_EPS && h0 - s0 > BREAK_EPS
+    }
 
-    for (let j = 0; j < 3; j++) {
-      if (j === 1 && void1) continue
+    for (let j = 0; j < NB; j++) {
+      if (voidBand(j)) continue
       // Outer face, outward +n.
       face(
         P(u0, LO[j], 0),
@@ -725,7 +762,7 @@ function compileProfiledWall(
       )
       // Inner face, outward -n: the same corners the other way round, at its
       // own band heights — under a PLANE top the two faces stop at different
-      // places, and that difference *is* the wedge this stage closes.
+      // places, and that difference *is* the wedge STAGE WEB-PIVOT-02A closes.
       face(
         P(u0, LI[j], T),
         P(u0, LI[j + 1], T),
@@ -740,17 +777,17 @@ function compileProfiledWall(
 
     // Bottom, outward -up — but not under an opening that reaches the base: a
     // door to floor level has no wall underneath it to close off.
-    const openToBase = void1 && LO[1] <= BREAK_EPS && RO[1] <= BREAK_EPS
+    const openToBase = active !== undefined && active.sillM <= BREAK_EPS
     if (!openToBase) quad(out, P(u0, 0, 0), P(u0, 0, T), P(u1, 0, T), P(u1, 0, 0), 'WALL', w.id, w.id)
     // Top. Under a POLYLINE the four corners are at two heights and this is the
     // ribbon STAGE WEB-PIVOT-02 emitted; under a PLANE all four lie on the
     // stated plane, so the quad is planar and *is* the soffit contact.
     quad(
       out,
-      P(u0, LO[3], 0),
-      P(u1, RO[3], 0),
-      P(u1, RI[3], T),
-      P(u0, LI[3], T),
+      P(u0, LO[NB], 0),
+      P(u1, RO[NB], 0),
+      P(u1, RI[NB], T),
+      P(u0, LI[NB], T),
       'WALL',
       w.id,
       w.id,
@@ -761,11 +798,15 @@ function compileProfiledWall(
 
     if (active) {
       const id = active.id
+      const t0L = wallTopAt(w, u0, 0)
+      const t0R = wallTopAt(w, u1, 0)
+      const [s0, h0] = pair(active, u0, t0L)
+      const [s1, h1] = pair(active, u1, t0R)
       // Sill, outward +up; head, outward the other way, both following the strip.
       // A sill at the wall base is the wall's own underside, already closed (or
       // deliberately open) above, so it is not emitted twice.
-      if (!openToBase) quad(out, P(u0, LO[1], 0), P(u1, RO[1], 0), P(u1, RO[1], T), P(u0, LO[1], T), 'REVEAL', id, w.id, id)
-      quad(out, P(u0, LO[2], 0), P(u0, LO[2], T), P(u1, RO[2], T), P(u1, RO[2], 0), 'REVEAL', id, w.id, id)
+      if (!openToBase) quad(out, P(u0, s0, 0), P(u1, s1, 0), P(u1, s1, T), P(u0, s0, T), 'REVEAL', id, w.id, id)
+      quad(out, P(u0, h0, 0), P(u0, h0, T), P(u1, h1, T), P(u1, h1, 0), 'REVEAL', id, w.id, id)
     }
   }
 
@@ -781,7 +822,7 @@ function compileProfiledWall(
   ] as const) {
     const BO = bands(u, 0)
     const BI = bands(u, T)
-    for (let j = 0; j < 3; j++) {
+    for (let j = 0; j < NB; j++) {
       const dOuter = Math.abs(BO[j + 1] - BO[j]) <= BREAK_EPS
       const dInner = Math.abs(BI[j + 1] - BI[j]) <= BREAK_EPS
       const kind: ContactKind | undefined = contactId ? 'JUNCTION' : undefined
@@ -821,37 +862,46 @@ function compileProfiledWall(
   for (const hole of holes) {
     const h0 = hole.offsetM
     const h1 = hole.offsetM + hole.widthM
-    const B0 = bands(h0, 0)
-    const B1 = bands(h1, 0)
-    quad(out, P(h0, B0[1], 0), P(h0, B0[1], T), P(h0, B0[2], T), P(h0, B0[2], 0), 'REVEAL', hole.id, w.id, hole.id)
-    quad(out, P(h1, B1[1], 0), P(h1, B1[2], 0), P(h1, B1[2], T), P(h1, B1[1], T), 'REVEAL', hole.id, w.id, hole.id)
+    const [s0, e0] = pair(hole, h0, wallTopAt(w, h0, 0))
+    const [s1, e1] = pair(hole, h1, wallTopAt(w, h1, 0))
+    quad(out, P(h0, s0, 0), P(h0, s0, T), P(h0, e0, T), P(h0, e0, 0), 'REVEAL', hole.id, w.id, hole.id)
+    quad(out, P(h1, s1, 0), P(h1, e1, 0), P(h1, e1, T), P(h1, s1, T), 'REVEAL', hole.id, w.id, hole.id)
 
     const g = glazingFor.get(hole.id)
     if (!g) continue
     const c = g.insetM
-    quad(out, P(h0, B0[1], c), P(h1, B1[1], c), P(h1, B1[2], c), P(h0, B0[2], c), 'GLAZING', g.id, w.id, hole.id)
+    quad(out, P(h0, s0, c), P(h1, s1, c), P(h1, e1, c), P(h0, e0, c), 'GLAZING', g.id, w.id, hole.id)
   }
 }
 
 /**
- * True when every opening in the set cuts the same three bands.
+ * True when every opening in the set can share one tiling of the wall.
  *
- * The profiled tiling splits every strip at `0 | sill | head(u) | top(u)`. With
- * one opening those boundaries are the same functions of `u` everywhere on the
- * wall, whatever the opening's shape. With several they are only the same
- * everywhere when no head is raked and all of them share a sill and a height —
- * and that is precisely the condition under which the strips of two different
- * openings still meet edge to edge. Anything else keeps STAGE WEB-PIVOT-02's
- * rule: one opening, and the rest refused by name rather than mis-tiled.
+ * The condition is that no strip is inside two openings at once. That is worth
+ * spelling out, because it is what makes the sorted band boundaries safe:
+ *
+ *   - the boundaries are **sorted** at each strip edge, so the quad between two
+ *     of them can never be inverted;
+ *   - an opening outside its own span collapses both its boundaries to the wall
+ *     base, so the only *live* interior boundaries in a strip belong to the one
+ *     opening that spans it, and a sill can never cross its own head;
+ *   - voidness is decided by testing a band's midpoint against that opening's
+ *     own sill and head at both ends of the strip, so it does not depend on
+ *     which index the sort happened to put the band at.
+ *
+ * With two openings in one strip none of that holds: they would fight over the
+ * same band, and the tiling would silently leave one of them solid. That is
+ * refused by name instead. `compileWalls` already rejects openings that overlap
+ * in both axes; this adds the case where they overlap only along the wall.
  */
-const sharesOneBandSchedule = (openings: readonly OpeningSpec[]): boolean =>
-  openings.length <= 1 ||
-  openings.every(
-    (o) =>
-      o.heightFarM === undefined &&
-      Math.abs(o.sillM - openings[0].sillM) <= BREAK_EPS &&
-      Math.abs(o.heightM - openings[0].heightM) <= BREAK_EPS,
-  )
+function sharesOneTiling(_w: WallSpec, _extent: WallExtent, openings: readonly OpeningSpec[]): boolean {
+  if (openings.length <= 1) return true
+  const sorted = [...openings].sort((a, b) => a.offsetM - b.offsetM)
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].offsetM < sorted[i - 1].offsetM + sorted[i - 1].widthM - BREAK_EPS) return false
+  }
+  return true
+}
 
 /**
  * Compile every wall in the input.
@@ -1010,15 +1060,16 @@ export function compileWalls(
     const before = tris.length
     const extent = extentOf.get(w.id)!
     if (needsProfiledPath(w, openings)) {
-      const cuttable = sharesOneBandSchedule(openings) ? openings : openings.slice(0, 1)
+      const cuttable = sharesOneTiling(w, extent, openings) ? openings : openings.slice(0, 1)
       if (cuttable.length < openings.length) {
         diagnostics.push({
           code: 'TOO_MANY_OPENINGS_ON_PROFILED_WALL',
           severity: 'ERROR',
           message:
-            `wall ${w.id} has a sloped top or a raked head and ${openings.length} openings that do not ` +
-            'share one sill and head; this stage compiles one opening on such a wall, because two raked ' +
-            'heads can cross and reorder the bands the tiling pairs up. The extra openings were not cut',
+            `wall ${w.id} has a sloped top or a raked head and ${openings.length} openings whose band ` +
+            'boundaries do not keep one order along the wall; this compiler cuts one opening on such a ' +
+            'wall, because two boundaries that swap places inside a strip twist the quad between them. ' +
+            'The extra openings were not cut',
           wallId: w.id,
         })
       }

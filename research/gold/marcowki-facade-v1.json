@@ -1,0 +1,188 @@
+{
+  "schemaVersion": "marcowki-facade-1.1.0",
+  "id": "marcowki-facade-v1",
+  "kind": "GOLD_FIXTURE",
+  "notForProduction": "Development only. Nothing in the production analyzer reads this file, and no coordinate in it is available to the automatic URL->model flow.",
+  "project": "Dom w marcówkach (GE)",
+  "projectCode": "m2fa281446a8ca",
+  "sourcePackageId": "pkg_29b62d3714de8bc4",
+  "sourcePackageContentHash": "29b62d3714de8bc473b81f504518eb17efc4e6774dbde3448c86d839af4da940",
+
+  "method": {
+    "frame": "The STAGE WEB-PIVOT-02 building frame: +X east, +Y up, +Z south, origin at the outer face of the main body's north-west corner at ground finished floor level. The entrance facade faces +Z.",
+    "authority": "STAGE WEB-PIVOT-05 §3, in order. (1) Printed exact dimensions: the width/height callouts on the two floor plans and the level marks on the section. (2) Floor plans for horizontal placement and depth: every opening's position along its wall, and the recess depth, are the measured gaps and projections in the plan ink. (3) Section for vertical levels. (4) Technical elevations for sill and head heights, which no plan dimensions. (5) The official perspective renders, for depth ordering only. (6) A stated assumption where nothing else settles it. Where a plan and an elevation disagree about a horizontal position, the plan wins and the elevation reading is recorded beside it.",
+    "elevationCalibration": "The six published elevations are renders, not line drawings, so they carry no dimension lines. Each is registered by two anchors per axis. FRONT: x 0 at px 376, 59.34 px/m to the right, y 0 at px 572.8; the printed eave +4.67 then lands on the measured roof corner at px 292 against 295.7 predicted. REAR: x 0 at px 970, 58.73 px/m to the LEFT (+X is image-left in a view from -Z), y 0 at px 568.9. EAST (asset_fcb1602240db, looking from +X, so +Z is image-left): z 13.60 at px 212, 58.9 px/m, y 0 at px 577. WEST (asset_3915ee416ac4, looking from -X, so +Z is image-right): z -1.00 at px 217, 58.9 px/m, y 0 at px 575. The EAST and WEST scales were not assumed: 58.9 px/m is what the silhouette px 212..1072 gives for the 14.60 m the plans measure, and the same scale then puts the east 300/230 window at z 0.884..3.906 against the plan's 0.874..3.918 and the west 90/230 and 140/140 windows at z 3.635..4.568 and 5.332..6.810 against the plan's 3.653..4.553 and 5.402..6.802. Heights read off these are VISUAL_DERIVED, never SOURCE_EXACT.",
+    "recessDiscovery": "The characteristic front and rear recesses are not a visual impression: they are in the plans, and the side elevations then measure them. The ground plan's right-hand dimension column reads 100 | 510 | 750 | 100, where 510 + 750 = the printed overall depth 1260 and the two 100s are the projections beyond it. Row scans past the walled envelope find solid 0.61 m wall ink and nothing else: on the ground plan at z 12.8, 13.1 and 13.4 only x 0.000..0.636 and x 11.441..12.050; at z -0.3, -0.6 and -0.9 only x 0.000..0.636 and x 7.283..7.892. The attic plan finds x 0.000..0.609 and x 7.259..7.895 at both ends. Everything between those returns is void, 1.00 m in front of the front wall and 1.00 m behind the rear wall. The east elevation closes it: its silhouette runs px 212..1072, and the same scale that puts its 300/230 window where the plan puts it makes that silhouette 14.60 m, which a walls-only 12.60 m reading cannot produce.",
+    "storeyDifference": "The two recesses are not the same shape at both storeys, and the plans say so. At the FRONT the ground plan has no ink at x 7.283..7.892 while the attic plan does: the east return of the front recess exists only above the balcony slab, and at ground level the recess runs unbroken from the west return at x 0.61 to the garage's east return at x 11.44. That is the dark portal over the entrance and the garage. At the REAR both plans carry both returns, so the rear recess is the same 0.61..7.29 slot at both storeys.",
+    "sources": {
+      "groundPlan": "asset_8fda78f8654c, FLOOR_PLAN / GROUND / DIMENSIONED, 853x853, sha abfdb262",
+      "atticPlan": "asset_8460d17163a4, FLOOR_PLAN / UPPER_ATTIC / DIMENSIONED, 853x853, sha 06af9e91",
+      "section": "asset_b1e8c064c1ba, SECTION, 1138x854, sha 2201a9c1",
+      "elevationFront": "asset_3c991e46a7e7, ELEVATION / FRONT, 1280x597, sha 130edece",
+      "elevationRear": "asset_863c2909651e, ELEVATION / REAR, 1280x598, sha 84ebf5b3",
+      "elevationEast": "asset_fcb1602240db, ELEVATION (published as a side elevation; identified as the EAST view by content: the garage is on its left, and under the registration below its 300/230 window lands at z 0.884..3.906 against the plan's 0.874..3.918), 1280x597, sha 93e15087",
+      "elevationWest": "asset_3915ee416ac4, ELEVATION (identified as the WEST view by content: two roof windows in the slope, and its 90/230 and 140/140 openings land at z 3.635..4.568 and 5.332..6.810 against the plan's 3.653..4.553 and 5.402..6.802), 1280x598, sha 0015dfde",
+      "renderHero": "asset_a26220a6e905, PERSPECTIVE_RENDER / HERO, 1600x900, sha 685a5d68 — used for depth ordering only",
+      "renderGarden": "asset_ac9a07c288f1, PERSPECTIVE_RENDER / GARDEN, 800x600, sha 5b9c3937 — used for depth ordering only",
+      "shell": "research/gold/marcowki-exterior-shell-v1.json",
+      "interior": "research/gold/marcowki-interior-v1.json"
+    },
+    "statusMeaning": {
+      "SOURCE_EXACT": "a number printed on a drawing, read directly",
+      "SOURCE_CORROBORATED": "printed once and independently confirmed by a measurement or a second drawing",
+      "SOURCE_DERIVED": "measured in the plan raster with scripts/plan-measure.ts; no printed dimension covers it",
+      "VISUAL_DERIVED": "measured on a published elevation render through the stated registration; good to about a decimetre and never better",
+      "ASSUMPTION": "a modelling choice no source settles",
+      "UNRESOLVED": "no source settles it and no choice was made"
+    },
+    "note": "Every element here was transcribed by hand. Nothing in this file is produced by the automatic analyzer, and nothing in the automatic analyzer reads it."
+  },
+
+  "levels": {
+    "terrainM": -0.32,
+    "groundFflM": 0.0,
+    "upperFflM": 3.06,
+    "garageWallTopM": 2.54,
+    "garageRoofTopM": 2.88,
+    "eaveM": 4.67,
+    "ridgeM": 7.95,
+    "source": "research/gold/marcowki-exterior-shell-v1.json and the section's +7,95 / +4,67 / +3,06 / ±0,00 / -0,32 marks"
+  },
+
+  "recesses": [
+    {
+      "id": "recess_front",
+      "facade": "FRONT",
+      "outerPlaneZ": 13.6,
+      "backPlaneZ": 12.6,
+      "depthM": 1.0,
+      "fromX": 0.61,
+      "toX": 11.44,
+      "baseM": 0.0,
+      "topM": 7.674,
+      "topKind": "ROOF_SOFFIT over x 0..7.90, PORTAL_HEAD at 3.08 over x 7.90..11.44",
+      "status": "SOURCE_CORROBORATED",
+      "source": "the printed 100 at the foot of the ground plan's right-hand dimension column (100 | 510 | 750 | 100 against the printed overall 1260); the ground plan's row scans at z 12.8, 13.1 and 13.4 find ink only at x 0.000..0.636 and 11.441..12.050; the east elevation measures the silhouette at 14.60 m",
+      "note": "Its back plane is the ground and attic front walls, which the shell already emits. Above 2.96 the recess is divided: the balcony occupies x 0.61..7.29 and the garage's flat roof takes over east of 7.90."
+    },
+    {
+      "id": "recess_rear",
+      "facade": "REAR",
+      "outerPlaneZ": -1.0,
+      "backPlaneZ": 0.0,
+      "depthM": 1.0,
+      "fromX": 0.61,
+      "toX": 7.29,
+      "baseM": 0.0,
+      "topM": 7.674,
+      "topKind": "ROOF_SOFFIT",
+      "status": "SOURCE_CORROBORATED",
+      "source": "the printed 100 at the head of the same dimension column; both plans' row scans at z -0.3, -0.6, -0.88 and -0.95 find ink only at x 0.000..0.636 and 7.259..7.895"
+    }
+  ],
+
+  "returns": [
+    { "id": "return_west_front", "recessId": "recess_front", "axis": "Z", "atM": 0.305, "thicknessM": 0.61, "fromM": 12.6, "toM": 13.6, "baseM": 0.0, "soffitAtX": 0.0, "soffitRisesTowardsPlusX": true, "soffitRoofId": "roof_main_gable", "status": "SOURCE_DERIVED", "source": "ground plan row scans at z 12.8/13.1/13.4: black ink x 0.000..0.636; attic plan at the same rows: x 0.000..0.609. The front elevation reads its face white from y -0.003 to 4.766 at x 0.30, against a 4.616 soffit plus the roof build-up." },
+    { "id": "return_west_rear", "recessId": "recess_rear", "axis": "Z", "atM": 0.305, "thicknessM": 0.61, "fromM": -1.0, "toM": 0.0, "baseM": 0.0, "soffitAtX": 0.0, "soffitRisesTowardsPlusX": true, "soffitRoofId": "roof_main_gable", "status": "SOURCE_DERIVED", "source": "ground plan row scans at z -0.3/-0.6/-0.9: black ink x 0.000..0.636. The rear elevation reads its face white from y -0.087 to 4.732 at x 0.30." },
+    { "id": "return_east_front", "recessId": "recess_front", "axis": "Z", "atM": 7.595, "thicknessM": 0.61, "fromM": 12.6, "toM": 13.6, "baseM": 2.96, "soffitAtX": 7.9, "soffitRisesTowardsPlusX": false, "soffitRoofId": "roof_main_gable", "status": "SOURCE_DERIVED", "source": "attic plan row scans at z 12.8/13.1/13.4: black ink x 7.259..7.895, where the GROUND plan has none. Its base is the balcony slab: the front elevation at x 7.60 reads dark to y 3.030 and then white from 3.047 to 4.631, against a 4.612 soffit." },
+    { "id": "return_east_rear", "recessId": "recess_rear", "axis": "Z", "atM": 7.595, "thicknessM": 0.61, "fromM": -1.0, "toM": 0.0, "baseM": 0.0, "soffitAtX": 7.9, "soffitRisesTowardsPlusX": false, "soffitRoofId": "roof_main_gable", "status": "SOURCE_DERIVED", "source": "both plans, row scans at z -0.3/-0.6/-0.9: black ink x 7.259..7.895 on the attic plan and 7.283..7.892 on the ground plan. The rear elevation reads it white from y -0.087 to 4.715 at x 7.60." },
+    { "id": "return_garage_east_front", "recessId": "recess_front", "axis": "Z", "atM": 11.745, "thicknessM": 0.61, "fromM": 12.6, "toM": 13.6, "baseM": 0.0, "flatTopM": 3.08, "status": "SOURCE_DERIVED", "source": "ground plan row scans at z 12.8/13.1/13.4: black ink x 11.441..12.050. Its top is the same dark band the front elevation measures at 3.081 at x 9.50 and 3.097 at x 11.80." }
+  ],
+
+  "slabs": [
+    { "id": "balcony_front", "recessId": "recess_front", "minX": 3.338, "maxX": 7.9, "minZ": 12.6, "maxZ": 13.6, "topM": 2.96, "thicknessM": 0.55, "usableFromX": 3.338, "usableToX": 7.29, "kind": "BALCONY", "status": "SOURCE_DERIVED", "source": "the attic plan's balcony floor: its west edge is the 0.026 m line at x 3.338 that the row scans find at z 12.8, 13.1, 13.4 and 13.5, and its east edge is the return at x 7.259..7.895, which the slab has to carry. The front elevation puts the west edge at 3.19, 0.15 m further west, and the plan is taken. Top and thickness are VISUAL_DERIVED: the rear elevation resolves the fascia at x 1.5..2.5 as 2.41..2.96 with the balustrade's base rail above it at 2.96..3.02." },
+    { "id": "balcony_rear", "recessId": "recess_rear", "minX": 0.61, "maxX": 7.29, "minZ": -1.0, "maxZ": 0.0, "topM": 2.96, "thicknessM": 0.55, "usableFromX": 0.61, "usableToX": 7.29, "kind": "BALCONY", "status": "SOURCE_DERIVED", "source": "the attic plan's balcony floor between the two returns; the rear elevation reads the dark fascia 2.41..2.96 continuously from x 0.647 to 7.254 at y 2.60" },
+    { "id": "portal_head_front", "recessId": "recess_front", "minX": 7.9, "maxX": 11.44, "minZ": 12.6, "maxZ": 13.6, "topM": 3.08, "thicknessM": 0.67, "kind": "PORTAL_HEAD", "status": "VISUAL_DERIVED", "source": "the dark band over the entrance and the garage door. Its top is measured at 3.081 at x 9.50 and 3.097 at x 11.80 on the front elevation, at 3.06..3.14 on the east elevation and at 2.99 on the garage's north wall in the rear elevation; 3.08 is taken. Its soffit is the balcony slab's 2.41, which the hero render shows as the lit timber strip over the entrance. It stops at x 11.44 so that the garage's east return carries it rather than sharing its volume." }
+  ],
+
+  "portals": [
+    {
+      "id": "portal_front",
+      "recessId": "recess_front",
+      "facade": "FRONT",
+      "outerPlaneZ": 13.6,
+      "depthM": 1.0,
+      "openingMinX": 0.61,
+      "openingMaxX": 11.44,
+      "openingBaseM": 0.0,
+      "openingTopM": 2.41,
+      "jambIds": ["return_west_front", "return_garage_east_front"],
+      "headIds": ["balcony_front", "portal_head_front"],
+      "materialClass": "DARK_RENDER",
+      "status": "SOURCE_CORROBORATED",
+      "source": "the recess mouth itself: its jambs are the two measured ground-level returns, its head the balcony slab and the portal head, and its soffit sits at 2.41. It is geometry, not colour; the dark render is the material class the elevations and renders show on the wall behind it."
+    }
+  ],
+
+  "railings": [
+    {
+      "id": "railing_front", "slabId": "balcony_front", "axis": "X", "atM": 13.575, "thicknessM": 0.05,
+      "baseM": 2.96, "heightM": 0.9, "material": "GLASS", "postWidthM": 0.13,
+      "panels": [[3.444, 4.265], [4.398, 5.219], [5.378, 6.199], [6.332, 7.153]],
+      "status": "SOURCE_DERIVED",
+      "source": "the attic plan's balustrade line at z 13.55, whose post marks the row scan finds at x 3.444..3.497, 4.212..4.265, 4.398..4.451, 5.166..5.219, 5.378..5.431, 6.146..6.199, 6.332..6.411 and 7.126..7.153 — four equal 0.821 m panels. Base and height are VISUAL_DERIVED: the front elevation reads the glass 3.13..3.89 at x 6.00 over a slab top of 2.96."
+    },
+    {
+      "id": "railing_rear", "slabId": "balcony_rear", "axis": "X", "atM": -0.88, "thicknessM": 0.05,
+      "baseM": 2.96, "heightM": 0.9, "material": "GLASS", "postWidthM": 0.13,
+      "panels": [[0.689, 2.199], [2.358, 3.868], [4.0, 5.51], [5.669, 7.153]],
+      "status": "SOURCE_DERIVED",
+      "source": "the attic plan's balustrade line at z -0.88, whose post marks the row scan finds at x 0.689..0.768, 2.146..2.199, 2.358..2.411, 3.815..3.868, 4.000..4.080, 5.484..5.510, 5.669..5.696 and 7.126..7.153 — four 1.48..1.51 m panels. The rear elevation reads the glass top at 3.85 at three columns."
+    }
+  ],
+
+  "roofExtent": {
+    "id": "roof_main_gable",
+    "kind": "GABLE",
+    "minX": 0.0,
+    "maxX": 7.9,
+    "minZ": -1.0,
+    "maxZ": 13.6,
+    "shellMinZ": 0.0,
+    "shellMaxZ": 12.6,
+    "status": "SOURCE_CORROBORATED",
+    "source": "the side elevations: roof and wall end together at both ends of a 14.60 m silhouette, so the main roof covers both recesses. The ridge runs along Z, so the longer roof is the same two planes at the same pitch and the same two levels; only its extent along Z changes. STAGE WEB-PIVOT-02's own footprint z 0.00..12.60 is recorded beside it and is what the shell fixture still compiles.",
+    "note": "It is emitted as ONE solid rather than as the shell's roof plus two pieces. The source shows one roof; three abutting prisms would have the same volume and the same silhouette but two seams through the middle of it, and a seam is a thing a reader would have to be told to ignore."
+  },
+
+  "openings": [
+    { "id": "og_front_room_window", "facade": "FRONT", "exposure": "EXTERIOR", "storey": "GROUND", "hostWallId": "ground_main_front", "offsetM": 1.397, "widthM": 1.1, "sillM": 0.0, "headM": 2.3, "kind": "WINDOW", "printed": "110/230", "roomId": "g_room", "fills": [{ "kind": "GLASS", "from": 0.0, "to": 1.0 }], "mullions": [], "status": "SOURCE_CORROBORATED", "source": "printed 110/230 on the ground plan; centred on the measured gap x 1.377..2.516 in the south wall ink; the front elevation reads its glass 1.50..2.33 inside that hole and its head at 2.29" },
+    { "id": "og_front_entrance", "facade": "FRONT", "exposure": "EXTERIOR", "storey": "GROUND", "hostWallId": "ground_main_front", "offsetM": 4.176, "widthM": 1.05, "sillM": 0.0, "headM": 2.1, "kind": "DOOR", "printed": "105/210", "roomId": "g_entry", "fills": [{ "kind": "DOOR_LEAF", "from": 0.0, "to": 0.72 }, { "kind": "GLASS", "from": 0.76, "to": 1.0 }], "mullions": [0.74], "status": "SOURCE_CORROBORATED", "source": "printed 105/210; centred on the measured gap x 4.158..5.244; the front elevation reads the leaf at x 4.196..5.174, and the hero render shows one leaf with a narrow glazed sidelight" },
+    { "id": "og_east_living_window", "facade": "EAST", "exposure": "EXTERIOR", "storey": "GROUND", "hostWallId": "ground_main_right", "offsetM": 8.704, "widthM": 3.0, "sillM": 0.0, "headM": 2.3, "kind": "GLAZING_GROUP", "printed": "300/230", "roomId": "g_salon", "fills": [{ "kind": "GLASS", "from": 0.0, "to": 0.5 }, { "kind": "GLASS", "from": 0.5, "to": 1.0 }], "mullions": [0.5], "status": "SOURCE_CORROBORATED", "source": "printed 300/230; centred on the measured gap z 0.874..3.918 in the main body's east wall; the east elevation puts it at z 0.884..3.906" },
+    { "id": "og_east_garage_door", "facade": "EAST", "exposure": "CONCEALED", "storey": "GROUND", "hostWallId": "ground_main_right", "offsetM": 1.216, "widthM": 0.93, "sillM": 0.0, "headM": 2.1, "kind": "DOOR", "printed": null, "roomId": "g_boiler", "connectsRoomId": "g_garage", "leaves": [{ "hostWallId": "garage_left", "offsetM": 5.354 }], "fills": [{ "kind": "DOOR_LEAF", "from": 0.0, "to": 1.0 }], "mullions": [], "status": "SOURCE_DERIVED", "source": "the 10.456..11.382 gap in the column scans at x 7.6 and 7.75, straight through the main body's east wall: the kotlownia/garage door STAGE WEB-PIVOT-04 recorded and could not cut. It is concealed by the garage, so no elevation shows it and it is not counted among the east facade's exterior openings. The garage ring carries its own wall on the same plane, so the door is cut through both leaves. Its head is an ASSUMPTION at 2.10, the height of every other single door in the house." },
+    { "id": "og_rear_living_glazing", "facade": "REAR", "exposure": "EXTERIOR", "storey": "GROUND", "hostWallId": "ground_main_rear", "offsetM": 0.942, "widthM": 4.7, "sillM": 0.0, "headM": 2.3, "kind": "GLAZING_GROUP", "printed": "470/230", "roomId": "g_salon", "fills": [{ "kind": "GLASS", "from": 0.0, "to": 0.5 }, { "kind": "GLASS", "from": 0.5, "to": 1.0 }], "mullions": [0.5], "status": "SOURCE_CORROBORATED", "source": "printed 470/230; centred on the measured gap x 2.251..6.965 in the north wall; the rear elevation reads the glass x 2.12..6.90 with a single central mullion at 4.63 and its head at 2.285" },
+    { "id": "og_west_living_window", "facade": "WEST", "exposure": "EXTERIOR", "storey": "GROUND", "hostWallId": "ground_main_left", "offsetM": 3.653, "widthM": 0.9, "sillM": 0.0, "headM": 2.3, "kind": "WINDOW", "printed": "90/230", "roomId": "g_salon", "fills": [{ "kind": "GLASS", "from": 0.0, "to": 1.0 }], "mullions": [], "status": "SOURCE_CORROBORATED", "source": "printed 90/230; the measured gap z 3.653..4.553 in the west wall; the west elevation puts it at z 3.635..4.568 and its head at 2.38" },
+    { "id": "og_west_kitchen_window", "facade": "WEST", "exposure": "EXTERIOR", "storey": "GROUND", "hostWallId": "ground_main_left", "offsetM": 5.402, "widthM": 1.4, "sillM": 0.9, "headM": 2.3, "kind": "WINDOW", "printed": "140/140", "roomId": "g_kitchen", "fills": [{ "kind": "GLASS", "from": 0.0, "to": 1.0 }], "mullions": [], "status": "SOURCE_CORROBORATED", "source": "printed 140/140; the measured gap z 5.400..6.803; the west elevation puts it at z 5.332..6.810 and its sill and head at 0.93 and 2.29, which is what fixes the sill at 0.90 rather than leaving it derived from the head alone" },
+    { "id": "og_garage_door", "facade": "FRONT", "exposure": "EXTERIOR", "storey": "GROUND", "hostWallId": "garage_front", "offsetM": 0.656, "widthM": 2.75, "sillM": 0.0, "headM": 2.25, "kind": "GARAGE_DOOR", "printed": "275/225", "roomId": "g_garage", "fills": [{ "kind": "GARAGE_PANEL", "from": 0.0, "to": 1.0 }], "mullions": [], "status": "SOURCE_CORROBORATED", "source": "printed 275/225; centred on the measured gap x 8.554..11.308 in the garage's south wall; the front elevation reads the timber-lined reveal at x 8.470..11.303 with its head at 2.270. The render shows the door rolled up, so its panels only cover the lower 1.03 m; the structural opening is the whole 275/225." },
+    { "id": "og_garage_side_door", "facade": "NORTH_GARAGE", "exposure": "EXTERIOR", "storey": "GROUND", "hostWallId": "garage_rear", "offsetM": 1.128, "widthM": 1.0, "sillM": 0.0, "headM": 2.1, "kind": "DOOR", "printed": "100/210", "roomId": "g_garage", "fills": [{ "kind": "GLASS", "from": 0.0, "to": 1.0 }], "mullions": [], "status": "SOURCE_CORROBORATED", "source": "printed 100/210; centred on the measured gap x 9.905..10.938 in the garage's north wall; the rear elevation reads the fully glazed leaf at x 9.893..10.914 with its head at 2.05" },
+
+    { "id": "og_front_gable_glazing", "facade": "FRONT", "exposure": "EXTERIOR", "storey": "UPPER", "hostWallId": "attic_front", "offsetM": 3.94, "widthM": 2.7, "sillM": 0.0, "headM": 3.2, "headFarM": 0.93443, "kind": "GLAZING_GROUP", "printed": "270/320", "roomId": "u_pokoj_s", "fills": [{ "kind": "GLASS", "from": 0.0, "to": 0.374 }, { "kind": "GLASS", "from": 0.374, "to": 1.0 }], "mullions": [0.374], "status": "SOURCE_EXACT", "source": "printed 270/320 on the attic plan; STAGE WEB-PIVOT-02 already derived the raked head 0.93443 = 3.20 - 2.70 x tan(40 deg) and compiles this opening. The measured gap x 3.921..6.650 confirms the 3.94 offset. The mullion is VISUAL_DERIVED: the front elevation reads a break in the glass at x 4.95 at both y 4.30 and y 5.00, which is 0.374 of the width from the ridge end." },
+    { "id": "og_rear_gable_east", "facade": "REAR", "exposure": "EXTERIOR", "storey": "UPPER", "hostWallId": "attic_rear", "offsetM": 0.97, "widthM": 2.34, "sillM": 0.0, "headM": 1.0634, "headFarM": 3.03, "kind": "GLAZING_GROUP", "printed": "234/303", "roomId": "u_pokoj_ne", "fills": [{ "kind": "GLASS", "from": 0.0, "to": 0.573 }, { "kind": "GLASS", "from": 0.573, "to": 1.0 }], "mullions": [0.573], "status": "SOURCE_CORROBORATED", "source": "printed 234/303 on the attic plan; centred on the measured gap x 4.583..6.941 in the rear gable wall. The head rakes at the roof pitch, tall at the ridge side: 3.03 - 2.34 x tan(40 deg) = 1.0634 at the eave side, a constant 1.05 m below the roof's underside. The rear elevation confirms the rake at three heights: the glass reaches x 6.538 at y 4.30, 5.72 at y 5.00 and 4.887 at y 5.70, against 6.719, 5.887 and 5.054 predicted plus a frame inset. Its mullion is the break the same elevation reads at x 5.59." },
+    { "id": "og_rear_gable_west", "facade": "REAR", "exposure": "EXTERIOR", "storey": "UPPER", "hostWallId": "attic_rear", "offsetM": 4.62, "widthM": 2.34, "sillM": 0.0, "headM": 3.03, "headFarM": 1.0634, "kind": "GLAZING_GROUP", "printed": "234/303", "roomId": "u_pokoj_nw", "fills": [{ "kind": "GLASS", "from": 0.0, "to": 0.406 }, { "kind": "GLASS", "from": 0.406, "to": 1.0 }], "mullions": [0.406], "status": "SOURCE_CORROBORATED", "source": "printed 234/303; centred on the measured gap x 0.927..3.285; the mirror of og_rear_gable_east about the ridge. The rear elevation reads its glass reaching x 1.362 at y 4.30 against 1.151 predicted, and its mullion at x 2.33 — 0.406 of the width from the ridge end, the mirror of the east window's 0.573 to within 0.05 m." }
+  ],
+
+  "materialBands": [
+    { "id": "band_front_timber", "facade": "FRONT", "material": "TIMBER", "minX": 0.657, "maxX": 3.185, "baseM": 0.0, "topM": 5.2, "status": "VISUAL_DERIVED", "source": "the front elevation: timber-classified pixels from x 0.657 to 3.185 at y 1.20, 2.60, 2.90, 3.40 and on up the gable. Flush cladding on the recessed front wall, so it is a material and not geometry; its top follows the roof line." },
+    { "id": "band_rear_timber_west", "facade": "REAR", "material": "TIMBER", "minX": 0.61, "maxX": 2.258, "baseM": 0.0, "topM": 2.41, "status": "VISUAL_DERIVED", "source": "the rear elevation: timber from the west return to the glazing's edge, up to the balcony fascia at 2.41" },
+    { "id": "band_rear_timber_east", "facade": "REAR", "material": "TIMBER", "minX": 6.958, "maxX": 7.29, "baseM": 0.0, "topM": 2.41, "status": "VISUAL_DERIVED", "source": "the rear elevation: the matching timber strip between the glazing and the east return" },
+    { "id": "band_west_dark", "facade": "WEST", "material": "DARK_RENDER", "minZ": 4.568, "maxZ": 9.909, "baseM": 0.0, "topM": 2.377, "status": "VISUAL_DERIVED", "source": "the west elevation: a dark render band across the ground storey from z 4.568 (the living window's far edge) to z 9.909, up to 2.377. The plan shows the wall straight there, so it is a material and not a recess." }
+  ],
+
+  "observedButNotModelled": [
+    "The three 78/118 roof windows — two on the west slope at z 5.95 and 8.21 and one on the east slope at z 8.21. Cutting a roof plane is a capability the roof compiler does not have, and STAGE WEB-PIVOT-05 §31 keeps it out of scope; they are counted as source-supported and not implemented in the facade completeness table.",
+    "The chimney, a 0.61 x 0.61 flue at x 5.50..6.11, z 4.42..5.03 rising to about 7.90. Its shaft is already emitted inside the attic by STAGE WEB-PIVOT-04; carrying it through the roof needs the same roof penetration the roof windows do.",
+    "The parapet upstand on the garage's flat roof. All three elevations that see the garage measure its band top at 2.99..3.14 against the section's 2.88 roof surface. Only the part of it over the portal is modelled, as portal_head_front; the rest would be a new element around a roof this stage does not otherwise touch.",
+    "Mullion and frame profiles at joinery scale, sash divisions, door furniture and the ribbed texture of the garage door, all of which are presentation.",
+    "The entrance steps, the terrace paving, the driveway and every plant in the renders.",
+    "The concealed lighting strip in the portal soffit, which is what makes the timber band read as lit in the hero render."
+  ],
+
+  "unresolved": [
+    "The printed 140 | 220 pair at the head of the attic plan's top dimension row. Their extension lines fall at x 0.57 and x 1.55, which is a 0.99 m segment, and neither number matches any distance the drawing shows there. No feature in this file depends on them.",
+    "The balcony slab's exact thickness. Its top is measured at 2.96 and its soffit at 2.41 on the rear elevation, where timber below and glass above bracket the fascia; the plans dimension neither, and the front elevation cannot separate the fascia from the dark wall behind it.",
+    "The glass balustrade's height. The elevations put the top of the glass at 3.85 (rear) and 3.89 (front), which is 0.89..0.93 m above the measured slab top — below what a balustrade is normally built to. Either the slab top is lower than measured or the renders show the glass without its top rail; the model uses 0.90 and says so.",
+    "The garage's flat roof level. STAGE WEB-PIVOT-02 fixed it at 2.88 from the section; the front elevation measures the band top at 3.081 and 3.097, the east elevation at 3.06..3.14 and the rear elevation at 2.99 on the garage's north wall. The shell's 2.88 is kept for the roof and the measured 3.08 is used for the portal head, and the ~0.2 m difference is recorded rather than absorbed.",
+    "The head height of the kotlownia/garage door, which no drawing dimensions. 2.10 m is assumed, matching every other single door in the house.",
+    "The balcony slab's west edge. The attic plan's 0.026 m edge line sits at x 3.338 and the front elevation's dark band begins at x 3.185..3.236. The plan is taken, per the authority order, and the 0.15 m difference is left standing."
+  ]
+}
