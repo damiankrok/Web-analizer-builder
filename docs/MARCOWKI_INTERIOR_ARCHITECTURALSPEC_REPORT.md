@@ -10,8 +10,9 @@ OWNER changes. Nothing was reset, cleaned or stashed.
 
 ## 2. Final HEAD
 
-Recorded in the commit that carries this report; see §19 of the log below and
-`git log --oneline -2` on `claude/new-session-pvd4ik`.
+Implementation commit `b1438f375bdd5f615408c19d5f07d52b31a485d4`; the final HEAD
+is the commit that records it here, one above it on
+`claude/new-session-pvd4ik`.
 
 ## 3. Branch
 
