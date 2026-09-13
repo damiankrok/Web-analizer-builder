@@ -134,25 +134,40 @@ check('6. 3D model is displayed', box !== null && box.width > 100 && box.height 
 // first — at phone height it starts below the fold.
 await canvas.scrollIntoViewIfNeeded()
 // The app scrolls the model into view itself when a run finishes, and that
-// scroll is smooth — so wait for the position to settle before reading it.
-let settled = null
-for (let i = 0; i < 40; i++) {
-  const now = await canvas.boundingBox()
-  if (settled && Math.abs(settled.y - now.y) < 0.5) break
-  settled = now
+// scroll is smooth, so the page is still moving for a while after the canvas
+// first appears. Wait for `window.scrollY` to stop changing — four consecutive
+// identical samples, because a smooth scroll has a still moment before it
+// starts and two identical reads there look exactly like one that has finished.
+let last = null
+let stable = 0
+for (let i = 0; i < 80; i++) {
+  const now = await page.evaluate(() => window.scrollY)
+  if (last !== null && Math.abs(last - now) < 0.5) {
+    if (++stable >= 4) break
+  } else {
+    stable = 0
+  }
+  last = now
   await page.waitForTimeout(100)
 }
 const drag = await canvas.boundingBox()
-const before = await canvas.screenshot()
+// Capture the canvas by clipping a page screenshot rather than by screenshotting
+// the element. An element screenshot of a WebGL canvas can return a stale frame
+// — the drawing buffer is not preserved between frames — and it does here:
+// rotating the camera through 222 degrees leaves the element capture identical
+// while the page capture shows the model turned. Comparing stale frames reads
+// as "orbit does not work" no matter how well it works.
+const shot = () => page.screenshot({ clip: { x: drag.x, y: drag.y, width: drag.width, height: drag.height } })
+const before = await shot()
 await page.mouse.move(drag.x + drag.width / 2, drag.y + drag.height / 2)
 await page.mouse.down()
 await page.mouse.move(drag.x + drag.width / 2 + 90, drag.y + drag.height / 2 + 30, { steps: 12 })
 await page.mouse.up()
 await page.waitForTimeout(400)
-const afterDrag = await canvas.screenshot()
+const afterDrag = await shot()
 await page.mouse.wheel(0, -400)
 await page.waitForTimeout(400)
-const afterWheel = await canvas.screenshot()
+const afterWheel = await shot()
 check(
   '7. orbit and zoom work',
   !before.equals(afterDrag) && !afterDrag.equals(afterWheel),

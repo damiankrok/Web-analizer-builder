@@ -7,12 +7,50 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Viewer, type ViewerEdge, type ViewerTri } from './Viewer.js'
 import { availableSources, runBundledAnalysis } from '../web/run-source.js'
-import { bundledFor } from '../web/bundled/index.js'
+import { assetFileNameFor } from '../core/contracts/source-package.js'
 
 type Progress = { stage: string; detail?: string }
 
+/** What the worker reports about the source package it analysed (§24). */
+type PackageAssetView = {
+  assetId: string
+  label: string
+  mediaType: string
+  roles: {
+    document: string
+    storey: string
+    annotation: string
+    view: string
+    projection: string
+    analyzerRole: string
+    confidence: number
+  }
+  selectedUrl: string
+  width: number
+  height: number
+  byteLength: number
+  contentHash: string
+  analysable: boolean
+  selectionReason: string
+  variants: Array<{ url: string; channel: string; width?: number; height?: number; note: string }>
+  relations: Array<{ kind: string; assetId: string; why: string }>
+}
+
+type PackageView = {
+  packageId: string
+  schemaVersion: string
+  contentHash: string
+  origin: string
+  assetCount: number
+  analysedCount: number
+  decodedCount: number
+  assets: PackageAssetView[]
+  missing: Array<{ what: string; error: { code: string; message: string } }>
+}
+
 type Result = {
   exports: Record<string, unknown>
+  sourcePackage?: PackageView
   audit: { entries: AuditEntry[]; summary: Record<string, number>; conflicts: unknown[] }
   printed?: PrintedResult
   geometry: { tris: ViewerTri[]; edges: ViewerEdge[]; quantities: Record<string, number> }
@@ -81,20 +119,18 @@ type ResolvedGeometry = {
 /**
  * Where a source thumbnail lives.
  *
- * The dev server exposes the fetch cache under `/fixtures/<slug>/assets/` keyed
- * by the cache hash; a standalone build publishes the same bytes beside the
- * page under `assets/`, named by that same hash. One helper covers both so the
- * asset grid does not need to know which host it is running in.
+ * Both hosts publish an asset under its own content hash — a standalone build
+ * beside the page, the dev server under the package directory — so one helper
+ * covers both and neither needs to match a filename. That is the same rule the
+ * analysis path uses; a thumbnail that resolves is therefore evidence that the
+ * analysed bytes are the ones on screen.
  */
-const assetSrc = (sourceUrl: string, assetUrl: string): string => {
-  const basename = assetUrl.slice(assetUrl.lastIndexOf('/') + 1)
-  if (!STANDALONE) {
-    const slug = slugFor(sourceUrl.trim())
-    return slug ? `/fixtures/${slug}/assets/${basename}` : ''
-  }
-  const project = bundledFor(sourceUrl)
-  const asset = project?.assets.find((a) => a.basename === basename)
-  return asset ? `assets/${asset.file}` : ''
+const assetSrc = (sourceUrl: string, contentHash: string, mediaType: string): string => {
+  if (!contentHash) return ''
+  const file = assetFileNameFor(contentHash, mediaType)
+  if (STANDALONE) return `assets/${file}`
+  const slug = slugFor(sourceUrl.trim())
+  return slug ? `/out/source-packages/${slug}/assets/${file}` : ''
 }
 
 const EMPTY_GEOMETRY: ResolvedGeometry = { openingGroups: [], appearance: [] }
@@ -192,26 +228,18 @@ export function App(): JSX.Element {
     handle.current?.cancel()
 
     const target = url.trim()
-    const slug = slugFor(target)
-
-    if (STANDALONE || !slug) {
-      // Bundled path: the package travels with the build, and an unbundled URL
-      // is refused with the reason rather than met with a spinner.
-      runBundledAnalysis(target, repairCycles, receive)
-        .then((h) => {
-          handle.current = h
-        })
-        .catch((err: unknown) => {
-          setError(err instanceof Error ? err.message : String(err))
-          setProgress(null)
-        })
-      return
-    }
-
-    const w = new Worker(new URL('../web/analyze-worker.ts', import.meta.url), { type: 'module' })
-    worker.current = w
-    w.onmessage = (e: MessageEvent) => receive(e.data)
-    w.postMessage({ url: target, base: `/fixtures/${slug}`, maxRepairCycles: repairCycles })
+    // One path. A standalone build finds the package inside itself; the dev
+    // server reads the one `npm run source:package` wrote. Either way the
+    // browser analyses a package the Node builder sealed, and an unbundled URL
+    // is refused with the reason rather than met with a spinner.
+    runBundledAnalysis(target, repairCycles, receive, 'assets', slugFor(target))
+      .then((h) => {
+        handle.current = h
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+        setProgress(null)
+      })
   }, [url, repairCycles, receive])
 
   useEffect(
@@ -250,6 +278,7 @@ export function App(): JSX.Element {
   const sourcePackage = result?.exports['source-package.json'] as
     | { identity: { name: string }; assets: Array<{ id: string; role: string; url: string; projection: string; projectionConfidence: number }> }
     | undefined
+  const pkgRecord = result?.sourcePackage
 
   return (
     <div className="app">
@@ -564,18 +593,80 @@ export function App(): JSX.Element {
           </section>
 
           <section className="panel">
+            <h2>Source package</h2>
+            {pkgRecord && (
+              <>
+                <div className="small">
+                  <b>{pkgRecord.packageId}</b> · schema {pkgRecord.schemaVersion} ·{' '}
+                  {pkgRecord.origin === 'PREBUILT_BUNDLE'
+                    ? 'package bundled with this page (no live fetch happened in the browser)'
+                    : pkgRecord.origin === 'LIVE_FETCH'
+                      ? 'built by a live Node-side acquisition'
+                      : 'built from the local Node fetch cache'}
+                </div>
+                <div className="small">
+                  hash {pkgRecord.contentHash.slice(0, 32)}… · {pkgRecord.assetCount} assets,{' '}
+                  {pkgRecord.analysedCount} analysed, {pkgRecord.decodedCount} decoded
+                  {pkgRecord.missing.length > 0 && ` · ${pkgRecord.missing.length} missing`}
+                </div>
+                <table className="audit">
+                  <thead>
+                    <tr>
+                      <th>document</th>
+                      <th>storey</th>
+                      <th>annotation</th>
+                      <th>view</th>
+                      <th className="num">decoded</th>
+                      <th>hash</th>
+                      <th className="num">alts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pkgRecord.assets.map((a) => (
+                      <tr key={a.assetId} className={a.analysable ? '' : 'muted'} title={a.selectionReason}>
+                        <td>{a.roles.document}</td>
+                        <td>{a.roles.storey}</td>
+                        <td>{a.roles.annotation}</td>
+                        <td>{a.roles.view}</td>
+                        <td className="num">
+                          {a.width}×{a.height}
+                        </td>
+                        <td className="small">{a.contentHash.slice(0, 8)}</td>
+                        <td className="num">{Math.max(0, a.variants.length - 1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {pkgRecord.missing.length > 0 && (
+                  <ul className="trace">
+                    {pkgRecord.missing.map((m, i) => (
+                      <li key={i} className="no">
+                        <b>{m.error.code}</b> {m.what}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </section>
+
+          <section className="panel">
             <h2>Source assets</h2>
             <div className="assets">
-              {sourcePackage?.assets.map((a) => (
-                <figure key={a.id}>
-                  <img src={assetSrc(url, a.url)} alt={a.role} loading="lazy" />
-                  <figcaption>
-                    {a.role}
-                    <br />
-                    <span className="small">{a.projection}</span>
-                  </figcaption>
-                </figure>
-              ))}
+              {pkgRecord?.assets
+                .filter((a) => a.analysable)
+                .map((a) => (
+                  <figure key={a.assetId}>
+                    <img src={assetSrc(url, a.contentHash, a.mediaType)} alt={a.roles.analyzerRole} loading="lazy" />
+                    <figcaption>
+                      {a.roles.analyzerRole}
+                      <br />
+                      <span className="small">
+                        {sourcePackage?.assets.find((x) => x.id === a.assetId)?.projection ?? a.roles.projection}
+                      </span>
+                    </figcaption>
+                  </figure>
+                ))}
             </div>
           </section>
 

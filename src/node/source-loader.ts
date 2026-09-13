@@ -1,29 +1,32 @@
 /**
- * Loads a complete, decoded SourcePackage for the Node host: page HTML through
- * the pure ARCHON parser, then bounded asset fetches, then decoding into the
- * portable RasterImage DTO.
+ * The analyzer's view of a project, for the research commands.
  *
- * Assets that metadata could not place fall through to pixel inference here —
- * this is the only place the second-stage classifier of §9 runs.
+ * Since STAGE WEB-PIVOT-03 this is a thin adapter and nothing more: it builds
+ * the project's `SourcePackage` through the one authoritative builder and
+ * narrows it with `toParsedSource`. It used to be a second acquisition path —
+ * it parsed the page itself, probed for larger copies and decided which ones to
+ * keep — and that is exactly how the CLI and the hosted build came to analyse
+ * different copies of the same drawing.
+ *
+ * The hand-run research scripts (`scripts/dimension-*.ts`, `render-views.ts`)
+ * and the test helpers call this, so they see the same bytes the CLI and the
+ * browser do, without each of them having to know about packages.
+ *
+ * NODE_ONLY.
  */
-import { readFile } from 'node:fs/promises'
 import type { RasterImage } from '../core/contracts/raster.js'
-import type { SourceAsset, SourcePackage } from '../core/contracts/source.js'
-import { parseArchonPage } from '../core/source/archon-parser.js'
-import { classifyByPixels } from '../core/source/role-classifier.js'
-import { toGray } from '../core/raster/gray.js'
-import { ARCHON_POLICY } from '../core/source/fetch-policy.js'
-import { resolutionCandidates, isResolutionUpgrade } from '../core/source/resolution.js'
-import { fetchWithCache, mapConcurrent } from './fetch-adapter.js'
-import { decodeImage } from './image-decode.js'
-
-export type LoadedAsset = { asset: SourceAsset; image: RasterImage }
+import type { ParsedSource } from '../core/contracts/source.js'
+import type { SourcePackage } from '../core/contracts/source-package.js'
+import { toParsedSource } from '../core/contracts/source-package.js'
+import { buildSourcePackage } from './source-package.js'
 
 export type LoadedSource = {
-  pkg: SourcePackage
+  pkg: ParsedSource
   images: Map<string, RasterImage>
   /** Assets that failed to fetch or decode, with the reason. */
   failures: Array<{ assetId: string; url: string; reason: string }>
+  /** The package the above was narrowed from, for anything that wants the record. */
+  source: SourcePackage
 }
 
 export type LoadOptions = {
@@ -37,93 +40,18 @@ export type LoadOptions = {
 }
 
 export async function loadSource(url: string, opts: LoadOptions): Promise<LoadedSource> {
-  const html = opts.htmlPath
-    ? await readFile(opts.htmlPath, 'utf8')
-    : new TextDecoder().decode((await fetchWithCache(url, 'html', opts.cacheDir)).bytes)
-
-  const pkg = parseArchonPage(html, url)
-  const limit = Math.min(opts.maxAssets ?? ARCHON_POLICY.maxAssets, ARCHON_POLICY.maxAssets)
-  const wanted = pkg.assets.slice(0, limit)
-
-  const failures: LoadedSource['failures'] = []
-  const images = new Map<string, RasterImage>()
-
-  const results = await mapConcurrent(wanted, ARCHON_POLICY.concurrency, async (asset) => {
-    try {
-      const res = await fetchWithCache(asset.url, 'image', opts.cacheDir)
-      let image = decodeImage(res.bytes)
-      let url = asset.url
-      let sha = res.sha256
-      let bytes = res.bytes.byteLength
-      let variants = asset.variants ?? [{ url: asset.url, kind: 'PAGE' as const }]
-      // Probe the conventional original where the page exposed no anchor for
-      // it. Verified, not assumed: kept only if it decodes to strictly more
-      // pixels (§4). Offline runs simply skip the probe.
-      if (!opts.offline && !variants.some((v) => v.kind === 'LIGHTBOX')) {
-        for (const candidate of resolutionCandidates(asset.url)) {
-          try {
-            const alt = await fetchWithCache(candidate, 'image', opts.cacheDir)
-            const decoded = decodeImage(alt.bytes)
-            if (!isResolutionUpgrade(decoded, image)) continue
-            variants = [
-              { url: candidate, kind: 'LIGHTBOX', nativeWidth: decoded.width, nativeHeight: decoded.height },
-              { ...variants[0], nativeWidth: image.width, nativeHeight: image.height },
-            ]
-            image = decoded
-            url = candidate
-            sha = alt.sha256
-            bytes = alt.bytes.byteLength
-            break
-          } catch {
-            // A 404 or an undecodable body means the convention does not hold
-            // for this asset. Nothing to record; the page copy stands.
-          }
-        }
-      }
-      return { asset: { ...asset, url, variants }, image, sha, bytes, error: null as string | null }
-    } catch (err) {
-      return {
-        asset,
-        image: null,
-        sha: '',
-        bytes: 0,
-        error: err instanceof Error ? err.message : String(err),
-      }
-    }
+  const { pkg, images } = await buildSourcePackage(url, {
+    cacheDir: opts.cacheDir,
+    ...(opts.htmlPath ? { htmlPath: opts.htmlPath } : {}),
+    ...(opts.offline ? { offline: true } : {}),
+    ...(opts.maxAssets ? { maxFetches: opts.maxAssets * 2 } : {}),
   })
-
-  const updated: SourceAsset[] = []
-  for (const r of results) {
-    if (!r.image) {
-      failures.push({ assetId: r.asset.id, url: r.asset.url, reason: r.error ?? 'unknown' })
-      updated.push(r.asset)
-      continue
-    }
-    images.set(r.asset.id, r.image)
-    const variants = (r.asset.variants ?? []).map((v) =>
-      v.url === r.asset.url ? { ...v, nativeWidth: r.image.width, nativeHeight: r.image.height } : v,
-    )
-    let next: SourceAsset = {
-      ...r.asset,
-      width: r.image.width,
-      height: r.image.height,
-      byteLength: r.bytes,
-      sha256: r.sha,
-      ...(variants.length > 0 ? { variants } : {}),
-    }
-    if (next.role === 'UNKNOWN_ASSET') {
-      const guess = classifyByPixels(r.image, toGray(r.image))
-      next = {
-        ...next,
-        role: guess.role,
-        roleConfidence: guess.confidence,
-        roleEvidence: [...next.roleEvidence, ...guess.evidence],
-      }
-    }
-    updated.push(next)
+  return {
+    pkg: toParsedSource(pkg),
+    images,
+    failures: pkg.assets
+      .filter((a) => a.status === 'FAILED')
+      .map((a) => ({ assetId: a.assetId, url: a.selectedUrl, reason: a.error?.message ?? 'unknown' })),
+    source: pkg,
   }
-  // Assets beyond the fetch budget keep their metadata-only classification.
-  for (const a of pkg.assets.slice(wanted.length)) updated.push(a)
-
-  return { pkg: { ...pkg, assets: updated }, images, failures }
 }

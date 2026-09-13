@@ -10,26 +10,112 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { analyze, DEFAULT_ANALYZE } from '../core/pipeline/analyze.js'
-import { buildExports, serialiseBundle, bundleHash } from '../core/pipeline/exports.js'
+import { buildExports, serialiseBundle, bundleHash, type SourceProvenance } from '../core/pipeline/exports.js'
 import { freezeHashes } from '../core/config/weights.js'
 import { canonicalJson } from '../core/util/hash.js'
-import { loadSource } from './source-loader.js'
+import { toParsedSource, type SourcePackage } from '../core/contracts/source-package.js'
+import { buildSourcePackage } from './source-package.js'
+import { decodeImage } from './image-decode.js'
+import { packageDir, readPackage, readPackageAssets, assetFileName, writePackage, packageExists } from './package-store.js'
 import { PROJECTS, projectByKey, type DevProject } from './projects.js'
+import type { RasterImage } from '../core/contracts/raster.js'
 
 const FREEZE_FILE = 'out/freeze.json'
 
+const cacheDirFor = (p: DevProject): string => `fixtures/${p.slug}/assets`
+const htmlPathFor = (p: DevProject): string => `fixtures/${p.slug}/page.html`
+
+const provenanceOf = (pkg: SourcePackage): SourceProvenance => ({
+  sourcePackageId: pkg.packageId,
+  sourcePackageSchemaVersion: pkg.schemaVersion,
+  sourcePackageHash: pkg.contentHash,
+  sourceOrigin: pkg.origin,
+})
+
+/**
+ * Obtain the project's source package, and say where it came from.
+ *
+ * A manifest written by `source:package` is preferred and used verbatim: that
+ * is what makes "the CLI and the web build analysed the same package" a claim
+ * about one file rather than about two code paths that ought to agree. Without
+ * one the package is built here, through the same builder, and the caller is
+ * told so.
+ */
+async function obtainPackage(
+  project: DevProject,
+  opts: { offline: boolean },
+): Promise<{ pkg: SourcePackage; images: Map<string, RasterImage>; from: 'MANIFEST' | 'BUILDER' }> {
+  if (await packageExists(project.slug)) {
+    const pkg = await readPackage(project.slug)
+    const bytes = await readPackageAssets(project.slug)
+    const images = new Map<string, RasterImage>()
+    for (const a of pkg.assets) {
+      if (!a.analysable || !a.contentHash) continue
+      const data = bytes.get(assetFileName(a.contentHash, a.mediaType))
+      if (!data) continue
+      try {
+        images.set(a.assetId, decodeImage(data))
+      } catch {
+        // Recorded in the package already; the analyzer reports what it has.
+      }
+    }
+    return { pkg, images, from: 'MANIFEST' }
+  }
+  const built = await buildSourcePackage(project.url, {
+    cacheDir: cacheDirFor(project),
+    htmlPath: htmlPathFor(project),
+    offline: opts.offline,
+  })
+  return { ...built, from: 'BUILDER' }
+}
+
 async function runProject(project: DevProject, opts: { offline: boolean; outDir: string; repairCycles: number }) {
-  const cacheDir = `fixtures/${project.slug}/assets`
-  const htmlPath = `fixtures/${project.slug}/page.html`
-  const loaded = await loadSource(project.url, { cacheDir, htmlPath: opts.offline ? htmlPath : undefined })
-  const result = analyze(loaded.pkg, loaded.images, { ...DEFAULT_ANALYZE, maxRepairCycles: opts.repairCycles })
-  const bundle = buildExports(result)
+  const { pkg, images, from } = await obtainPackage(project, opts)
+  const result = analyze(toParsedSource(pkg), images, { ...DEFAULT_ANALYZE, maxRepairCycles: opts.repairCycles })
+  const bundle = buildExports(result, provenanceOf(pkg))
   const dir = join(opts.outDir, project.slug)
   await mkdir(dir, { recursive: true })
   for (const [name, text] of Object.entries(serialiseBundle(bundle))) {
     await writeFile(join(dir, name), text, 'utf8')
   }
-  return { result, bundle, dir, hash: bundleHash(bundle) }
+  return { result, bundle, dir, hash: bundleHash(bundle), pkg, from }
+}
+
+/** The concise audit §12 of the stage brief asks the package command to print. */
+function printPackage(
+  project: DevProject,
+  pkg: SourcePackage,
+  written: { dir: string; assetFiles: number; bytes: number },
+): void {
+  const analysable = pkg.assets.filter((a) => a.analysable)
+  console.log(`\n=== ${project.key}: ${project.name}`)
+  console.log(`  package    ${pkg.packageId}  schema ${pkg.schemaVersion}  origin ${pkg.origin}`)
+  console.log(`  hash       ${pkg.contentHash}`)
+  console.log(`  page       ${pkg.document.byteLength} B, sha ${pkg.document.contentHash.slice(0, 16)}`)
+  const channels = new Map<string, number>()
+  for (const d of pkg.discovery) channels.set(d.channel, (channels.get(d.channel) ?? 0) + 1)
+  console.log(`  discovery  ${pkg.discovery.length} records: ${[...channels].sort().map(([c, n]) => `${c}=${n}`).join(' ')}`)
+  console.log(`  assets     ${pkg.assets.length} (${analysable.length} analysed, ${pkg.assets.length - analysable.length} kept as evidence)`)
+  const variants = pkg.assets.reduce((n, a) => n + a.variants.length, 0)
+  const relations = pkg.assets.reduce((n, a) => n + a.relations.length, 0)
+  console.log(`  variants   ${variants} published copies, ${relations} relations between assets`)
+  if (pkg.missing.length > 0) {
+    console.log(`  missing    ${pkg.missing.length}:`)
+    for (const m of pkg.missing) console.log(`               ${m.error.code.padEnd(22)} ${m.what}`)
+  } else {
+    console.log('  missing    none')
+  }
+  console.log(`  written    ${written.dir} (${written.assetFiles} asset files, ${(written.bytes / 1e6).toFixed(2)} MB)`)
+  console.log('\n  logical source                                selected              decoded    hash      alts')
+  for (const a of [...pkg.assets].sort((x, y) => (x.roles.document + x.roles.storey + x.label < y.roles.document + y.roles.storey + y.label ? -1 : 1))) {
+    const role = `${a.roles.document}/${a.roles.storey}/${a.roles.annotation}/${a.roles.view}`
+    const file = a.selectedUrl.slice(a.selectedUrl.lastIndexOf('/') + 1)
+    console.log(
+      `  ${a.analysable ? '*' : ' '} ${role.padEnd(44)} ${file.slice(-22).padEnd(23)}` +
+        `${String(a.width).padStart(5)}x${String(a.height).padEnd(6)} ${a.contentHash.slice(0, 8)}  ${a.variants.length - 1}`,
+    )
+  }
+  console.log('  (* analysed; the rest are registered as evidence)')
 }
 
 function printSummary(project: DevProject, r: Awaited<ReturnType<typeof runProject>>): void {
@@ -55,6 +141,11 @@ function printSummary(project: DevProject, r: Awaited<ReturnType<typeof runProje
   }
   console.log(`  repair: ${result.repairTrace.filter((t) => t.accepted).length} accepted / ${result.repairTrace.length} proposed`)
   console.log(`  ${result.performance.totalMs} ms, ${result.performance.cameraProjections} camera evaluations`)
+  console.log(
+    `  source package ${r.pkg.packageId} (${r.pkg.contentHash.slice(0, 16)}), ` +
+      `${r.pkg.assets.filter((a) => a.analysable).length}/${r.pkg.assets.length} assets analysed, ` +
+      `origin ${r.pkg.origin}, from ${r.from === 'MANIFEST' ? 'out/source-packages' : 'the builder (no manifest on disk)'}`,
+  )
   console.log(`  exports -> ${r.dir} (bundle ${r.hash.slice(0, 16)})`)
 }
 
@@ -67,12 +158,19 @@ async function main(): Promise<void> {
   const repairCycles = flags.has('--no-repair') ? 0 : 3
 
   switch (command) {
-    case 'fetch': {
-      for (const key of args.length > 0 ? args : ['A', 'B', 'C']) {
+    case 'fetch':
+    case 'source:package':
+    case 'package': {
+      for (const key of args.length > 0 ? args : ['A', 'B']) {
         const p = projectByKey(key)
         if (!p) throw new Error(`unknown project ${key}`)
-        const loaded = await loadSource(p.url, { cacheDir: `fixtures/${p.slug}/assets` })
-        console.log(`${p.key}: ${loaded.pkg.assets.length} assets, ${loaded.failures.length} failures`)
+        const { pkg } = await buildSourcePackage(p.url, {
+          cacheDir: cacheDirFor(p),
+          htmlPath: flags.has('--online') ? undefined : htmlPathFor(p),
+          offline: !flags.has('--online'),
+        })
+        const written = await writePackage(p.slug, pkg, cacheDirFor(p))
+        printPackage(p, pkg, written)
       }
       return
     }

@@ -13,7 +13,7 @@
  * Portable: decoded images in, JSON-serialisable result out.
  */
 import type { RasterImage } from '../contracts/raster.js'
-import type { SourcePackage } from '../contracts/source.js'
+import type { ParsedSource } from '../contracts/source.js'
 import { factValue } from '../contracts/source.js'
 import type { BuildingHypothesis } from '../contracts/hypotheses.js'
 import type { MultiViewScore, ElevationScoreBreakdown, ViewScoreBreakdown } from '../contracts/scoring.js'
@@ -62,7 +62,7 @@ export type PerformanceRecord = {
 }
 
 export type AnalyzeResult = {
-  pkg: SourcePackage
+  pkg: ParsedSource
   /** Printed dimensions read from the source-native drawings (WEB-02). */
   printed: import('../dimensions/stage.js').DimensionStageResult
   /** Every dimension the model rests on, with its provenance. */
@@ -98,7 +98,7 @@ function metricResidual(h: BuildingHypothesis, score: MultiViewScore): number {
 }
 
 export function analyze(
-  pkg: SourcePackage,
+  pkg: ParsedSource,
   images: Map<string, RasterImage>,
   opts: AnalyzeOptions = DEFAULT_ANALYZE,
 ): AnalyzeResult {

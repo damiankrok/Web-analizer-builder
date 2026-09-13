@@ -1,5 +1,5 @@
 import type { RasterImage } from '../contracts/raster.js'
-import type { SourceAsset, SourcePackage } from '../contracts/source.js'
+import type { SourceAsset, ParsedSource } from '../contracts/source.js'
 import { factValue } from '../contracts/source.js'
 import type { ProjectionType } from '../contracts/camera.js'
 import type { MetricScaffold, ElevationAnalysis, PlanAnalysis } from '../contracts/scaffold.js'
@@ -43,7 +43,7 @@ export type AnalysedAsset = {
 
 const LINE_DRAWING_ROLES = new Set(['PLAN_GROUND', 'PLAN_UPPER', 'PLAN_OTHER', 'SITE_PLAN', 'SECTION'])
 
-export function analyseAssets(pkg: SourcePackage, images: Map<string, RasterImage>): AnalysedAsset[] {
+export function analyseAssets(pkg: ParsedSource, images: Map<string, RasterImage>): AnalysedAsset[] {
   const out: AnalysedAsset[] = []
   for (const asset of pkg.assets) {
     const image = images.get(asset.id)
@@ -79,7 +79,7 @@ export type ScaffoldStageResult = {
 }
 
 export function buildMetricScaffold(
-  pkg: SourcePackage,
+  pkg: ParsedSource,
   analysed: readonly AnalysedAsset[],
   images: Map<string, RasterImage>,
   graph: EvidenceGraph,

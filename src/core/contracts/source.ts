@@ -1,4 +1,14 @@
-/** Source package contracts (§8, §9). Produced by the ARCHON adapter. */
+/**
+ * What one parsed project page contains — the analyzer's input shape.
+ *
+ * Originally called `SourcePackage`. STAGE WEB-PIVOT-03 gave that name to the
+ * immutable acquisition record in `source-package.ts`, which is a superset of
+ * this: it keeps every variant found rather than the one chosen, records where
+ * each URL came from and why one won, and carries a content hash that every
+ * execution path can be checked against. This type is what a package *narrows
+ * to* for the analyzer (`toParsedSource`), and the analyzer's contract is
+ * unchanged by that stage.
+ */
 
 export type AssetRole =
   | 'PLAN_GROUND'
@@ -120,7 +130,7 @@ export type SourceIdentity = {
   fetchedAt?: string
 }
 
-export type SourcePackage = {
+export type ParsedSource = {
   identity: SourceIdentity
   facts: PublishedFact[]
   rooms: RoomFact[]
@@ -131,10 +141,10 @@ export type SourcePackage = {
   warnings: string[]
 }
 
-export const factValue = (pkg: SourcePackage, key: string): number | null => {
+export const factValue = (pkg: ParsedSource, key: string): number | null => {
   const f = pkg.facts.find((x) => x.key === key)
   return f && f.value !== null ? f.value : null
 }
 
-export const assetsByRole = (pkg: SourcePackage, roles: readonly AssetRole[]): SourceAsset[] =>
+export const assetsByRole = (pkg: ParsedSource, roles: readonly AssetRole[]): SourceAsset[] =>
   pkg.assets.filter((a) => roles.includes(a.role))

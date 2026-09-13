@@ -62,12 +62,16 @@ git checkout claude/new-session-pvd4ik
 npm install
 ```
 
-Now download the Marcówki source package once (this is the only step that needs
+Now build the Marcówki source package once (this is the only step that needs
 the internet, and it only ever talks to `archon.pl`):
 
 ```sh
-npm run fetch A
+npm run source:package -- A --online
 ```
+
+It prints what it found, what it chose and why, and writes the package to
+`out/source-packages/A-marcowki/`. Everything afterwards — the CLI, the dev
+server, the hostable build and the browser — analyses that one package.
 
 And run the analysis:
 
@@ -146,7 +150,8 @@ weight in every score is zero, asserted by a test.
 | Dev build output | `dist-ui/` (git-ignored) |
 | Standalone build output | `dist-standalone/` (git-ignored) |
 | CLI export output | `out/<project-slug>/` (git-ignored) |
-| Cached source packages | `fixtures/<slug>/page.html` (tracked), `fixtures/<slug>/assets/` (git-ignored) |
+| Fetch cache | `fixtures/<slug>/page.html` (tracked), `fixtures/<slug>/assets/` (git-ignored) |
+| Built source packages | `out/source-packages/<slug>/manifest.json` + `assets/` (git-ignored) |
 | WEB-01 research report | `docs/WEB_ANALYZER_CAMERA_AWARE_RESEARCH_REPORT.md` |
 | WEB-02 research report | `docs/WEB_ANALYZER_DIMENSION_OCR_HARDENING_REPORT.md` |
 | Kotlin / Android porting guide | `docs/KOTLIN_PORTING_GUIDE.md` |
@@ -157,15 +162,16 @@ weight in every score is zero, asserted by a test.
 ```sh
 npm install                 # dependencies; no postinstall, no native build
 npm run typecheck           # tsc --noEmit
-npm test                    # vitest run — 129 tests, 11 files, ~110 s
+npm test                    # vitest run — 321 tests, 18 files, ~115 s
 ```
 
 Analysis:
 
 ```sh
-npm run fetch A             # cache one project's page + assets (needs network)
-npm run fetch A B C D       # cache all four
-npm run analyze A           # analyze from cache, write out/A-marcowki/
+npm run source:package A            # build one project's source package from the cache
+npm run source:package -- A --online  # ...fetching anything the cache does not have
+npm run source:package A B          # build both development projects
+npm run analyze A           # analyze that package, write out/A-marcowki/
 npm run analyze A --online  # fetch live instead of using the cache
 npm run analyze A --no-repair
 npm run bench               # A and B, with a summary table
@@ -180,14 +186,14 @@ npm run ui:dev              # http://localhost:5173
 npm run ui:build            # -> dist-ui/
 ```
 
-The dev server serves the cached assets straight out of `fixtures/`, so the
-browser runs the same pipeline the CLI does with no proxy involved. It needs
-`npm run fetch A` to have been run first.
+The dev server serves the built packages straight out of `out/source-packages/`,
+so the browser analyses the same package the CLI does, byte for byte, with no
+proxy involved. It needs `npm run source:package A` to have been run first.
 
 Standalone (hostable, self-contained) build:
 
 ```sh
-npm run standalone:bundle   # inline fixtures/A-marcowki into src/web/bundled/index.ts
+npm run standalone:bundle   # embed A's source package into src/web/bundled/index.ts
 npm run standalone:build    # bundle + vite build + artifact page -> dist-standalone/
 npm run standalone:serve    # static server on http://localhost:4173
 npm run standalone:verify   # Playwright, Pixel 5 viewport, 11 checks -> out/preview/
@@ -227,20 +233,24 @@ Fetching is split so that the decision is portable and the I/O is not:
   re-checked at every hop; 8 MB per page, 12 MB per image, 40 assets, 4
   concurrent, 30 s timeout; declared image types only. It is not an open proxy.
 - **`src/node/fetch-adapter.ts`** performs the request under that policy.
-- **`src/node/source-loader.ts`** caches each response under a
-  `sha256(url).slice(0, 24)` key in `fixtures/<slug>/assets/`, decodes it, and
-  runs the source-resolution probe that looks for a higher-resolution variant of
-  each drawing — accepting one only if the fetched candidate really decodes to
-  more pixels in both axes. Nothing is ever upscaled.
+- **`src/node/source-package.ts`** is the one place that decides which bytes an
+  analysis sees. It enumerates every copy the page exposes, fetches and decodes
+  each, and picks the largest copy *of the same view* — accepting a candidate
+  only if it really decodes to more pixels. Nothing is ever upscaled, and a
+  larger image with a different crop is recorded as a different asset rather
+  than silently preferred. Responses are cached under a
+  `sha256(url).slice(0, 24)` key in `fixtures/<slug>/assets/`.
 
 A browser cannot do this. ARCHON sends no CORS headers, so a page on another
 origin cannot read its responses at all, and a browser cannot enforce the
 redirect and size rules even if it could. That is why live fetching is a Node
-path (`npm run fetch`, `npm run analyze --online`) and the browser reads a cache
-the Node path produced. The standalone build carries that cache inside itself.
+path (`npm run source:package -- <key> --online`) and the browser reads a
+package the Node path produced. The standalone build carries that package inside
+itself, and the page says so: the source panel names the package, its hash and
+its origin, so a preview never implies a live fetch that did not happen.
 
 Adding a project: append it to `PROJECTS` in `src/node/projects.ts`, then
-`npm run fetch <key>`.
+`npm run source:package -- <key> --online`.
 
 ### Where the results go
 
@@ -291,8 +301,9 @@ build does not carry one and the host supplies it.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| `npm run analyze A` reports no assets | the cache is empty | `npm run fetch A` |
-| Thumbnails are blank in `npm run ui:dev` | same | `npm run fetch A`, then reload |
+| `npm run analyze A` reports no assets | the cache is empty | `npm run source:package -- A --online` |
+| Thumbnails are blank in `npm run ui:dev` | no package has been built | `npm run source:package A`, then reload |
+| A command says a package "does not match its own hash" | the manifest was edited after it was built | `npm run source:package A` to rebuild it |
 | `npm run holdout` refuses to run | the freeze does not match `HEAD` | `npm run freeze` — but read §28–29 of the WEB-02 report first; re-freezing to make the holdout run defeats its purpose |
 | The preview refuses a URL you pasted | that project is not bundled into the build | use `npm run ui:dev` or the CLI, which fetch live |
 | `standalone:verify` cannot launch a browser | Chromium is not where Playwright expects | `npx playwright install chromium`, or set `PLAYWRIGHT_BROWSERS_PATH` |

@@ -19,7 +19,7 @@ URL → SourcePackage → EvidenceGraph → metric scaffold → ProjectionClassi
 | `src/node/` | host adapter | Bounded fetching, image decoding, CLI. |
 | `src/web/` | host adapter | Browser image decoding, worker entry. |
 | `src/ui/` | web only | React debug panels + Three.js viewer/debug renderer. |
-| `fixtures/` | data | Cached source pages for the A/B/C development projects. |
+| `fixtures/` | data | Fetch cache: source pages and asset bytes for the development projects. |
 | `scripts/` | tooling | Standard audit renders, standalone build, browser verification. |
 | `docs/` | docs | Kotlin porting guide, export schemas, research report. |
 
@@ -35,7 +35,7 @@ URL → SourcePackage → EvidenceGraph → metric scaffold → ProjectionClassi
 ```
 npm run typecheck
 npm test                                 # 129 tests
-npm run fetch A                          # populate a project's asset cache (network)
+npm run source:package -- A --online     # build a project's source package (network)
 npm run analyze A                        # analyze one development project, write exports
 npm run bench                            # A + B benchmark summary
 npm run freeze                           # write the freeze hashes, then C may run

@@ -11,7 +11,7 @@
  * PORT_DIRECT (Kotlin).
  */
 import type { RasterImage } from '../contracts/raster.js'
-import type { SourceAsset, SourcePackage } from '../contracts/source.js'
+import type { SourceAsset, ParsedSource } from '../contracts/source.js'
 import { toGray, saturationField } from '../raster/gray.js'
 import { prepareAsset } from '../raster/pipeline.js'
 import { analyseSectionGeometry } from '../scaffold/section.js'
@@ -67,7 +67,7 @@ export type DimensionStageResult = {
 const TEXT_ROLES = /^(PLAN|SECTION|ELEVATION|SITE)/
 
 export function readSourceDimensions(
-  pkg: SourcePackage,
+  pkg: ParsedSource,
   images: Map<string, RasterImage>,
 ): DimensionStageResult {
   const notes: string[] = []

@@ -1,28 +1,32 @@
 /**
- * Worker entry for the standalone build.
+ * The browser's analysis entry point — STAGE WEB-PIVOT-03.
  *
- * It differs from `analyze-worker.ts` in one respect: it makes no requests.
- * The page HTML arrives as a string and the images arrive already decoded,
- * because decoding needs `<img>` — which exists on the main thread and not in
- * a worker — and because a hosting environment that blocks scripted requests
- * would otherwise stop the worker dead.
+ * It receives a `SourcePackage` and the decoded rasters of the copies that
+ * package selected. It does not parse HTML, does not classify assets and does
+ * not choose between variants: every one of those decisions was made once, by
+ * the Node builder, and is carried in the package. The worker's only job is to
+ * check the package's seal and run the same core pipeline the CLI runs.
  *
- * Everything after that boundary is the same core pipeline the CLI runs.
+ * That is the whole of the parity fix. Before this stage the worker re-parsed
+ * the project page and matched images by filename, which is how it came to
+ * analyse a 400x300 section while the CLI analysed the 1138x854 original.
+ *
+ * Decoding still happens on the main thread, because it needs `<img>` — which
+ * exists there and not in a worker — and because a host that blocks scripted
+ * requests would otherwise stop the worker dead.
  *
  * WEB_ONLY.
  */
-import { parseArchonPage } from '../core/source/archon-parser.js'
 import { analyze, DEFAULT_ANALYZE } from '../core/pipeline/analyze.js'
 import { buildExports } from '../core/pipeline/exports.js'
 import { tessellate } from '../core/hypotheses/tessellate.js'
-import { classifyByPixels } from '../core/source/role-classifier.js'
-import { toGray } from '../core/raster/gray.js'
+import { packageSealIntact, sealPackage, toParsedSource, type SourcePackage } from '../core/contracts/source-package.js'
 import type { RasterImage } from '../core/contracts/raster.js'
 
 export type StandaloneRequest = {
-  url: string
-  html: string
-  /** Decoded assets, keyed by the basename of the asset URL. */
+  /** The sealed package, as canonical JSON. */
+  manifest: string
+  /** Decoded rasters, keyed by `assetId` — never by filename. */
   images: Array<[string, RasterImage]>
   maxRepairCycles: number
 }
@@ -32,43 +36,69 @@ export type StandaloneMessage =
   | { kind: 'ERROR'; message: string }
   | { kind: 'DONE'; payload: unknown }
 
-const basename = (url: string): string => url.slice(url.lastIndexOf('/') + 1)
-
 /** The analysis itself, shared by the worker and the main-thread fallback. */
 export function runStandalone(
   request: StandaloneRequest,
   post: (m: StandaloneMessage) => void,
 ): void {
-  post({ kind: 'PROGRESS', stage: 'parsing source package' })
-  let pkg = parseArchonPage(request.html, request.url)
-
-  const byName = new Map(request.images)
-  const images = new Map<string, RasterImage>()
-  for (const asset of pkg.assets) {
-    const image = byName.get(basename(asset.url))
-    if (image) images.set(asset.id, image)
-  }
-  post({ kind: 'PROGRESS', stage: 'classifying assets', detail: `${images.size} of ${pkg.assets.length} decoded` })
-  pkg = {
-    ...pkg,
-    assets: pkg.assets.map((a) => {
-      const image = images.get(a.id)
-      if (!image) return a
-      const next = { ...a, width: image.width, height: image.height }
-      if (a.role !== 'UNKNOWN_ASSET') return next
-      const guess = classifyByPixels(image, toGray(image))
-      return { ...next, role: guess.role, roleConfidence: guess.confidence, roleEvidence: [...a.roleEvidence, ...guess.evidence] }
-    }),
+  post({ kind: 'PROGRESS', stage: 'reading source package' })
+  const pkg = JSON.parse(request.manifest) as SourcePackage
+  if (!packageSealIntact(pkg)) {
+    // The package's own hash is the only thing making "the CLI and this build
+    // analysed the same source" checkable. A package that fails its seal has
+    // been edited since it was built, and analysing it would make that claim
+    // untrue while still printing the id it no longer matches.
+    throw new Error(
+      `source package ${pkg.packageId} does not match its own hash ` +
+        `(manifest says ${pkg.contentHash.slice(0, 16)}, content hashes to ${sealPackage(pkg).contentHash.slice(0, 16)})`,
+    )
   }
 
-  post({ kind: 'PROGRESS', stage: 'analysing', detail: 'dimensions, scaffold, cameras, scoring, repair' })
-  const result = analyze(pkg, images, { ...DEFAULT_ANALYZE, maxRepairCycles: request.maxRepairCycles })
+  const images = new Map<string, RasterImage>(request.images)
+  const parsed = toParsedSource(pkg)
+  post({
+    kind: 'PROGRESS',
+    stage: 'analysing',
+    detail: `${images.size} of ${parsed.assets.length} assets decoded, package ${pkg.packageId}`,
+  })
+
+  const result = analyze(parsed, images, { ...DEFAULT_ANALYZE, maxRepairCycles: request.maxRepairCycles })
   const tess = tessellate(result.resolved)
 
   post({
     kind: 'DONE',
     payload: {
-      exports: buildExports(result),
+      exports: buildExports(result, {
+        sourcePackageId: pkg.packageId,
+        sourcePackageSchemaVersion: pkg.schemaVersion,
+        sourcePackageHash: pkg.contentHash,
+        sourceOrigin: pkg.origin,
+      }),
+      sourcePackage: {
+        packageId: pkg.packageId,
+        schemaVersion: pkg.schemaVersion,
+        contentHash: pkg.contentHash,
+        origin: pkg.origin,
+        assetCount: pkg.assets.length,
+        analysedCount: parsed.assets.length,
+        decodedCount: images.size,
+        assets: pkg.assets.map((a) => ({
+          assetId: a.assetId,
+          label: a.label,
+          mediaType: a.mediaType,
+          roles: a.roles,
+          selectedUrl: a.selectedUrl,
+          width: a.width,
+          height: a.height,
+          byteLength: a.byteLength,
+          contentHash: a.contentHash,
+          analysable: a.analysable,
+          selectionReason: a.selectionReason,
+          variants: a.variants.map((v) => ({ url: v.url, channel: v.channel, width: v.width, height: v.height, note: v.note })),
+          relations: a.relations,
+        })),
+        missing: pkg.missing,
+      },
       audit: result.audit,
       printed: result.printed,
       geometry: {

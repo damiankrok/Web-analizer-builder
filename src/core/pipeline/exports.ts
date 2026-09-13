@@ -89,9 +89,35 @@ export function resolvedGeometry(h: BuildingHypothesis): unknown {
   }
 }
 
-export function buildExports(result: AnalyzeResult): ExportBundle {
+/**
+ * Which source package an analysis consumed — STAGE WEB-PIVOT-03.
+ *
+ * Stamped into three of the exported documents so that a result can be traced
+ * to the exact bytes it was produced from. Two runs that disagree are now a
+ * comparison of two hashes; before this stage they were a comparison of two
+ * filenames, which is how the CLI and the hosted build came to analyse
+ * different copies of the same drawing without either of them noticing.
+ */
+export type SourceProvenance = {
+  sourcePackageId: string
+  sourcePackageSchemaVersion: string
+  sourcePackageHash: string
+  /** Where the bytes came from: a live fetch, a local cache, a prebuilt bundle. */
+  sourceOrigin: string
+}
+
+export function buildExports(result: AnalyzeResult, provenance?: SourceProvenance): ExportBundle {
+  const trace = provenance
+    ? {
+        sourcePackageId: provenance.sourcePackageId,
+        sourcePackageSchemaVersion: provenance.sourcePackageSchemaVersion,
+        sourcePackageHash: provenance.sourcePackageHash,
+        sourceOrigin: provenance.sourceOrigin,
+      }
+    : null
   const sourcePackage = {
     schemaVersion: SCHEMA_VERSION,
+    sourcePackage: trace,
     identity: result.pkg.identity,
     facts: result.pkg.facts,
     rooms: result.pkg.rooms,
@@ -149,6 +175,7 @@ export function buildExports(result: AnalyzeResult): ExportBundle {
 
   const selfVerification = {
     schemaVersion: SCHEMA_VERSION,
+    sourcePackage: trace,
     referenceWeight: REFERENCE_WEIGHT,
     freeze: result.freeze,
     hardConstraintsSatisfied: result.finalScore.hardConstraintsSatisfied,
@@ -186,6 +213,7 @@ export function buildExports(result: AnalyzeResult): ExportBundle {
 
   const benchmarkSummary = {
     schemaVersion: SCHEMA_VERSION,
+    sourcePackage: trace,
     project: result.pkg.identity.projectCode,
     name: result.pkg.identity.name,
     performance: result.performance,

@@ -1,5 +1,5 @@
 /**
- * ARCHON project-page parser (§8). Pure: HTML string in, SourcePackage out.
+ * ARCHON project-page parser (§8). Pure: HTML string in, ParsedSource out.
  * No DOM — the analyzer must parse identically in Node, in a Web Worker and on
  * the JVM, and jsdom is neither portable nor necessary for this markup.
  *
@@ -13,7 +13,7 @@ import type {
   RoomFact,
   SourceAsset,
   SourceIdentity,
-  SourcePackage,
+  ParsedSource,
 } from '../contracts/source.js'
 import { RESOURCE_SLUG_MAP, TITLE_MAP, parsePlNumber, parsePlPair } from './facts.js'
 import { classifyByMetadata, resolveRoleConflicts, deaccent } from './role-classifier.js'
@@ -380,7 +380,7 @@ function preferDimensionedPlans(assets: SourceAsset[]): SourceAsset[] {
   return out
 }
 
-export function parseArchonPage(html: string, url: string): SourcePackage {
+export function parseArchonPage(html: string, url: string): ParsedSource {
   const clean = stripScripts(html)
   const projectCode = extractProjectCode(url, html)
   const { facts, warnings } = extractFacts(clean)

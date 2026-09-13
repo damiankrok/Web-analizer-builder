@@ -1,19 +1,19 @@
 import { readFileSync } from 'node:fs'
 import { parseArchonPage } from '../src/core/source/archon-parser.js'
-import type { SourcePackage } from '../src/core/contracts/source.js'
+import type { ParsedSource } from '../src/core/contracts/source.js'
 import type { RasterImage } from '../src/core/contracts/raster.js'
 import { makeMask } from '../src/core/contracts/raster.js'
 import type { MaskImage } from '../src/core/contracts/raster.js'
 import { loadSource } from '../src/node/source-loader.js'
 import { PROJECTS } from '../src/node/projects.js'
 
-export const fixturePackage = (slug: string): SourcePackage => {
+export const fixturePackage = (slug: string): ParsedSource => {
   const project = PROJECTS.find((p) => p.slug === slug)
   if (!project) throw new Error(`unknown fixture ${slug}`)
   return parseArchonPage(readFileSync(`fixtures/${slug}/page.html`, 'utf8'), project.url)
 }
 
-export async function loadFixture(slug: string): Promise<{ pkg: SourcePackage; images: Map<string, RasterImage> }> {
+export async function loadFixture(slug: string): Promise<{ pkg: ParsedSource; images: Map<string, RasterImage> }> {
   const project = PROJECTS.find((p) => p.slug === slug)
   if (!project) throw new Error(`unknown fixture ${slug}`)
   const loaded = await loadSource(project.url, {

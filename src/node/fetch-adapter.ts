@@ -80,22 +80,56 @@ async function fetchBounded(
   throw new Error(`redirect budget exhausted for ${url}`)
 }
 
+/** Cache key for a URL: stable across runs and across machines. */
+export const cacheKeyFor = (url: string): string => sha256(new TextEncoder().encode(url)).slice(0, 24)
+
 /** Cache path is derived from the URL hash, so it is stable across runs. */
-const cachePathFor = (cacheDir: string, url: string, ext: string): string =>
-  join(cacheDir, `${sha256(new TextEncoder().encode(url)).slice(0, 24)}${ext}`)
+export const cachePathFor = (cacheDir: string, url: string, ext: string): string =>
+  join(cacheDir, `${cacheKeyFor(url)}${ext}`)
+
+/**
+ * Thrown when strict offline mode is asked for something the cache does not
+ * have.
+ *
+ * A distinct class because the caller has to be able to tell this apart from a
+ * 404 or a timeout: an offline cache miss is a statement about *this machine*,
+ * not about the publisher, and the package records it with its own error code.
+ */
+export class OfflineCacheMissError extends Error {
+  constructor(readonly url: string, readonly path: string) {
+    super(`offline: ${url} is not in the cache (expected ${path}); run the fetch step online once`)
+    this.name = 'OfflineCacheMissError'
+  }
+}
+
+export type FetchOptions = {
+  policy?: FetchPolicy
+  /**
+   * Refuse to touch the network.
+   *
+   * Strictly: a cache miss throws. "Offline" that quietly falls back to a
+   * request is not offline, and a reproducibility claim built on it is not a
+   * claim about anything.
+   */
+  offline?: boolean
+}
 
 export async function fetchWithCache(
   url: string,
   kind: 'html' | 'image',
   cacheDir: string,
-  policy: FetchPolicy = ARCHON_POLICY,
+  opts: FetchPolicy | FetchOptions = {},
 ): Promise<FetchResult> {
+  // Historically the fourth argument was the policy itself.
+  const options: FetchOptions = 'allowedHosts' in opts ? { policy: opts as FetchPolicy } : (opts as FetchOptions)
+  const policy = options.policy ?? ARCHON_POLICY
   const ext = kind === 'html' ? '.html' : '.bin'
   const path = cachePathFor(cacheDir, url, ext)
   if (await exists(path)) {
     const bytes = new Uint8Array(await readFile(path))
     return { url, finalUrl: url, bytes, contentType: null, sha256: sha256(bytes), fromCache: true }
   }
+  if (options.offline) throw new OfflineCacheMissError(url, path)
   const result = await fetchBounded(url, kind, policy)
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, result.bytes)

@@ -18,7 +18,11 @@ export type FetchPolicy = {
 }
 
 export const ARCHON_POLICY: FetchPolicy = {
-  allowedHosts: ['www.archon.pl', 'archon.pl', 'assets.archon.pl'],
+  // All four are ARCHON's own hosts. `cdn1` was added in STAGE WEB-PIVOT-03:
+  // the publisher's public render-lightbox endpoint serves its large copies
+  // from there, and a host allowlist that excludes it silently turns official
+  // material into a download failure.
+  allowedHosts: ['www.archon.pl', 'archon.pl', 'assets.archon.pl', 'cdn1.archon.pl'],
   maxRedirects: 3,
   maxHtmlBytes: 8 * 1024 * 1024,
   maxImageBytes: 12 * 1024 * 1024,
