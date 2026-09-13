@@ -16,7 +16,7 @@ to the one built before this stage.
 | --- | --- |
 | Branch | `claude/new-session-pvd4ik` |
 | Start HEAD | `a7f8082dee6c758dccbf475783e66b5f290df699` |
-| Final HEAD | recorded in §12 |
+| Final HEAD | `b6f0ed90fd02fe001cd6553ddcab7cfa23cd43aa` |
 
 `ROOT_CAUSE_MATRIX.md` and `FULL_ANALYZER_TECHNICAL_AUDIT.md` are still not
 present in this repository, and nothing below depends on them. Everything here
@@ -359,7 +359,11 @@ HEAD, on a clean tree, to establish the baseline the §10 hashes compare against
 
 Nothing above is claimed unrun.
 
-**Final HEAD:** `_recorded in the follow-up commit, which changes this file only_`
+**Final HEAD of the stage work:** `b6f0ed90fd02fe001cd6553ddcab7cfa23cd43aa`
+— the commit that carries every file in §2. A commit cannot name its own hash,
+so that SHA is recorded by a second commit which changes this document and
+nothing else; the gates above were run on the tree of `b6f0ed9`, and the two
+commits differ only by these three lines.
 
 ## 13. Limitations
 
