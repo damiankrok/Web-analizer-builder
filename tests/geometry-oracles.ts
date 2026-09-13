@@ -404,3 +404,166 @@ export function distanceToSurface(tris: readonly OTri[], origin: OVec, direction
   const hits = rayHits(tris, origin, norm(direction))
   return hits.length === 0 ? Number.POSITIVE_INFINITY : hits[0].t
 }
+
+// --------------------------------------------------------------------------
+// Roof oracles — STAGE WEB-PIVOT-02.
+//
+// The legacy analyzer accepted a roof because a field said `pitchDeg = 40`.
+// Nothing here reads a field. A roof plane is a set of triangles that share a
+// normal; its pitch is the angle that normal makes with the vertical; its rise
+// and run are the extents of its own vertices. The identity
+//
+//     rise = tan(pitch) x run
+//
+// then relates two things measured separately — an angle from the normals and
+// a pair of distances from the positions — so it is a real check and not a
+// restatement.
+// --------------------------------------------------------------------------
+
+/** One planar face of a roof, measured from the triangles that make it. */
+export type MeasuredPlane = {
+  /** Unit outward normal, averaged over the cluster. */
+  normal: OVec
+  /** Angle from horizontal, degrees. Zero is flat. */
+  pitchDeg: number
+  areaM2: number
+  /** Lowest and highest points of the plane, along `up`. */
+  lowM: number
+  highM: number
+  /** Horizontal extent along the plane's own downhill direction. */
+  horizontalRunM: number
+  /** `highM - lowM`. */
+  riseM: number
+  triangleCount: number
+}
+
+/**
+ * The upward-facing planes of a roof, one entry per distinct normal.
+ *
+ * Only faces whose normal has an upward component are considered: a roof slab
+ * is a solid, so its underside and its edges are emitted too, and a pitch
+ * measured off an underside would come back mirrored. Clusters are keyed on the
+ * normal to nine decimal places, which is exact for a compiler that computes
+ * every vertex from the same arithmetic.
+ */
+export function measureRoofPlanes(
+  tris: readonly OTri[],
+  up: OVec,
+  opts?: { minAreaM2?: number },
+): MeasuredPlane[] {
+  const u = norm(up)
+  const minArea = opts?.minAreaM2 ?? 1e-6
+  const groups = new Map<string, { n: OVec; tris: OTri[]; area: number }>()
+  for (const t of tris) {
+    const raw = cross(sub(t.b, t.a), sub(t.c, t.a))
+    const l = Math.hypot(raw.x, raw.y, raw.z)
+    if (l < 1e-12) continue
+    const n = { x: raw.x / l, y: raw.y / l, z: raw.z / l }
+    if (dot(n, u) <= 1e-9) continue
+    const key = `${n.x.toFixed(9)},${n.y.toFixed(9)},${n.z.toFixed(9)}`
+    const g = groups.get(key) ?? { n, tris: [], area: 0 }
+    g.tris.push(t)
+    g.area += l / 2
+    groups.set(key, g)
+  }
+  const out: MeasuredPlane[] = []
+  for (const g of groups.values()) {
+    if (g.area < minArea) continue
+    const cosPitch = Math.min(1, Math.max(-1, dot(g.n, u)))
+    const pitchDeg = (Math.acos(cosPitch) * 180) / Math.PI
+    // Downhill in plan is the normal's horizontal part: a roof's outward normal
+    // leans away from its ridge.
+    const horiz = { x: g.n.x - u.x * cosPitch, y: g.n.y - u.y * cosPitch, z: g.n.z - u.z * cosPitch }
+    const hl = Math.hypot(horiz.x, horiz.y, horiz.z)
+    const d = hl < 1e-9 ? { x: 0, y: 0, z: 0 } : { x: horiz.x / hl, y: horiz.y / hl, z: horiz.z / hl }
+    let lowM = Infinity
+    let highM = -Infinity
+    let dMin = Infinity
+    let dMax = -Infinity
+    for (const t of g.tris) {
+      for (const p of [t.a, t.b, t.c]) {
+        const h = dot(p, u)
+        lowM = Math.min(lowM, h)
+        highM = Math.max(highM, h)
+        if (hl >= 1e-9) {
+          const s = dot(p, d)
+          dMin = Math.min(dMin, s)
+          dMax = Math.max(dMax, s)
+        }
+      }
+    }
+    out.push({
+      normal: g.n,
+      pitchDeg,
+      areaM2: g.area,
+      lowM,
+      highM,
+      horizontalRunM: hl < 1e-9 ? 0 : dMax - dMin,
+      riseM: highM - lowM,
+      triangleCount: g.tris.length,
+    })
+  }
+  return out.sort((a, b) => b.areaM2 - a.areaM2)
+}
+
+/** Heights at which a vertical line through `(x, z)` enters and leaves solid material. */
+export function verticalProfileAt(
+  tris: readonly OTri[],
+  x: number,
+  z: number,
+  up: OVec,
+  from = -1000,
+): Interval[] {
+  const u = norm(up)
+  const back = Math.abs(from)
+  // Start well below the building on the up axis, so `t` minus that distance is
+  // the height above the datum the caller is thinking in.
+  const origin = { x: x - u.x * back, y: -u.y * back, z: z - u.z * back }
+  return rayIntervals(tris, origin, u).map((i) => ({ t0: i.t0 - back, t1: i.t1 - back }))
+}
+
+/**
+ * Runs of material along a ray through a **union** of solids.
+ *
+ * `rayIntervals` pairs crossings up and insists the count be even, which is
+ * right for one closed mesh and wrong for a building: walls stand on walls, a
+ * roof lands on a wall, and every one of those contacts puts two coincident
+ * faces on the line. Pairing them collapses the two into one crossing and the
+ * count comes out odd.
+ *
+ * This counts depth instead. Each crossing is an entry or an exit depending on
+ * whether the face it hit points with or against the ray, and material is
+ * wherever the depth is above zero. Coincident faces then cancel exactly: an
+ * exit and an entry at the same distance leave the depth where it was, so two
+ * solids in contact read as one run rather than two runs and a seam.
+ */
+export function materialRuns(
+  tris: readonly OTri[],
+  origin: OVec,
+  direction: OVec,
+  tolerance = 1e-9,
+): Interval[] {
+  const dir = norm(direction)
+  const events = rayHits(tris, origin, dir).map((h) => {
+    const t = tris[h.index]
+    const n = cross(sub(t.b, t.a), sub(t.c, t.a))
+    return { t: h.t, enter: dot(n, dir) < 0 }
+  })
+  // At equal distances an entry must be processed before an exit, or a contact
+  // between two solids briefly drops the depth to zero and splits the run.
+  events.sort((a, b) => (Math.abs(a.t - b.t) <= tolerance ? Number(b.enter) - Number(a.enter) : a.t - b.t))
+  const out: Interval[] = []
+  let depth = 0
+  let start = 0
+  for (const e of events) {
+    if (e.enter) {
+      if (depth === 0) start = e.t
+      depth++
+    } else if (depth > 0) {
+      depth--
+      if (depth === 0) out.push({ t0: start, t1: e.t })
+    }
+  }
+  if (depth > 0 && events.length > 0) out.push({ t0: start, t1: events[events.length - 1].t })
+  return mergeIntervals(out, tolerance)
+}

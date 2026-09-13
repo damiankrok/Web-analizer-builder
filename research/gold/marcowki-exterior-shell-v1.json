@@ -1,0 +1,394 @@
+{
+  "id": "marcowki-exterior-shell",
+  "version": "1",
+  "kind": "DEVELOPMENT_GOLD_SPEC",
+  "notForProduction": "Transcribed by hand for STAGE WEB-PIVOT-02. It is not an analyzer output, is not read by the production pipeline, and is not evidence about the analyzer's accuracy \u2014 only about the compiler's.",
+  "project": {
+    "name": "Dom w marcowkach (GE)",
+    "url": "https://www.archon.pl/projekty-domow/projekt-dom-w-marcowkach-ge-m2fa281446a8ca",
+    "publisher": "ARCHON+"
+  },
+  "method": {
+    "planScalePxPerM": 37.9,
+    "sectionScalePxPerM": 72.59,
+    "howScaleWasEstablished": "Ground plan: the printed chain 1205 spans the outer wall faces at x=58..514 (457 px), giving 37.93 px/m; independently the printed chain 1260 spans y=259..735 (477 px), giving 37.86 px/m. Section: the five printed datum markers +7,95 / +4,67 / +3,06 / +-0,00 / -0,32 sit at rows 65 / 303 / 420 / 642 / 665, and every pair of them gives 72.55 to 72.67 px/m.",
+    "reader": "Measured with scripts/source-measure.ts over the decoded source rasters (npx tsx scripts/_dump.ts out/pivot02/src), then read by eye at 4x to 14x magnification with scripts/_crop.mjs. Both routes are recorded so a reader can repeat either: 'bands' finds walls and datum lines, 'line' reads a thickness or an opening width along one row or column, and 'slope' fits a straight ink edge and reports its angle."
+  },
+  "worldFrame": {
+    "description": "Right-handed, +X east, +Y up, +Z south. Origin at the rear-left outer wall corner at ground finished floor level. The entrance facade is at maximum Z and faces +Z, matching this repository's FRONT convention.",
+    "datum": "ground finished floor level, the section's +-0,00"
+  },
+  "observations": [
+    {
+      "key": "plan.overallWidthM",
+      "value": 12.05,
+      "unit": "m",
+      "source": "rzut-parteru-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_GROUND, asset_eef4a69d3303, 853x853)",
+      "locator": "top dimension chain, the figure 1205, spanning the outer wall faces",
+      "interpretation": "Overall exterior width of the building, main body plus garage.",
+      "status": "SOURCE_EXACT",
+      "note": "Measured independently at 457 px / 37.93 px/m = 12.05 m."
+    },
+    {
+      "key": "plan.mainBodyWidthM",
+      "value": 7.9,
+      "unit": "m",
+      "source": "rzut-parteru-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_GROUND, asset_eef4a69d3303, 853x853)",
+      "locator": "top chain, left segment, the figure 790",
+      "interpretation": "Exterior width of the gabled main body, to the far face of the wall it shares with the garage.",
+      "status": "SOURCE_EXACT",
+      "note": "Measured at 298 px = 7.86 m; the section shows the same wall faces at x=128..700 = 7.88 m."
+    },
+    {
+      "key": "plan.garageWidthM",
+      "value": 4.15,
+      "unit": "m",
+      "source": "rzut-parteru-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_GROUND, asset_eef4a69d3303, 853x853)",
+      "locator": "top chain, right segment, the figure 415",
+      "interpretation": "Exterior width of the garage wing.",
+      "status": "SOURCE_EXACT",
+      "note": "Measured at 158 px = 4.17 m; 790 + 415 = 1205 closes the chain."
+    },
+    {
+      "key": "plan.overallDepthM",
+      "value": 12.6,
+      "unit": "m",
+      "source": "rzut-parteru-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_GROUND, asset_eef4a69d3303, 853x853)",
+      "locator": "right dimension chain, the figure 1260",
+      "interpretation": "Overall exterior depth, rear wall face to front wall face. The 100 cm segments above and below it are the rear terrace and the entrance canopy, which are outside the building.",
+      "status": "SOURCE_EXACT",
+      "note": "Measured at 477 px = 12.58 m, and the chain divides as 510 + 750 = 1260 at a wall the drawing actually shows at y=452."
+    },
+    {
+      "key": "plan.garageDepthM",
+      "value": 7.5,
+      "unit": "m",
+      "source": "rzut-parteru-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_GROUND, asset_eef4a69d3303, 853x853)",
+      "locator": "right chain, lower segment, the figure 750",
+      "interpretation": "Depth of the garage wing, measured from the wall at the 510/750 split to the front wall face.",
+      "status": "SOURCE_EXACT",
+      "note": "Measured at 283 px = 7.46 m."
+    },
+    {
+      "key": "plan.rearZoneDepthM",
+      "value": 5.1,
+      "unit": "m",
+      "source": "rzut-parteru-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_GROUND, asset_eef4a69d3303, 853x853)",
+      "locator": "right chain, upper segment, the figure 510",
+      "interpretation": "Depth from the rear wall face to the garage's rear wall. The garage does not reach the rear facade, which is what makes the footprint an L.",
+      "status": "SOURCE_EXACT"
+    },
+    {
+      "key": "wall.externalThicknessM",
+      "value": 0.45,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "left exterior wall, solid fill x=128..160 (33 px)",
+      "interpretation": "External wall build-up: 25 cm structure plus 20 cm insulation.",
+      "status": "SOURCE_CORROBORATED",
+      "note": "Section gives 33 px = 0.455 m; the ground plan gives 18 px = 0.475 m. Both round to the 45 cm a 25+20 build-up implies. Not printed as a figure anywhere, hence corroborated rather than exact."
+    },
+    {
+      "key": "level.terrainM",
+      "value": -0.32,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "datum marker -0,32, level line at row 665",
+      "interpretation": "Finished terrain level at the building, below the ground finished floor.",
+      "status": "SOURCE_EXACT"
+    },
+    {
+      "key": "level.groundFflM",
+      "value": 0.0,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "datum marker +-0,00, level line at row 642",
+      "interpretation": "Ground storey finished floor level. The building's zero.",
+      "status": "SOURCE_EXACT"
+    },
+    {
+      "key": "level.groundClearHeightM",
+      "value": 2.72,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "vertical dimension 272",
+      "interpretation": "Ground storey floor-to-ceiling clear height.",
+      "status": "SOURCE_EXACT"
+    },
+    {
+      "key": "level.upperFflM",
+      "value": 3.06,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "datum marker +3,06, level line at row 420",
+      "interpretation": "Attic finished floor level, at the top of the upper floor slab.",
+      "status": "SOURCE_EXACT",
+      "note": "The slab's solid fill runs rows 420..444, so its top is the +3,06 line exactly."
+    },
+    {
+      "key": "slab.upperThicknessM",
+      "value": 0.33,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "upper floor slab fill, rows 420..444 (24 px)",
+      "interpretation": "Depth of the upper floor structure.",
+      "status": "SOURCE_DERIVED",
+      "note": "24 px / 72.59 px/m = 0.331 m. Consistent with 3.06 - 2.72 = 0.34 from the printed clear height."
+    },
+    {
+      "key": "level.atticClearHeightM",
+      "value": 2.66,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "vertical dimension 266",
+      "interpretation": "Attic clear height at the tall part of the room.",
+      "status": "SOURCE_EXACT",
+      "note": "Recorded but not used by the shell model."
+    },
+    {
+      "key": "wall.kneeWallM",
+      "value": 1.3,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "vertical dimension 130, ticks at rows 325 and 420",
+      "interpretation": "Knee wall: attic finished floor to the top of the masonry the roof bears on.",
+      "status": "SOURCE_EXACT",
+      "note": "Measured span 95 px = 1.309 m. Its top is therefore +4.36, which is 0.27 m below the eave datum; the difference is the roof structure above the knee wall. Recorded, and not used as the wall top, because the shell's wall top has to be where the roof plane is."
+    },
+    {
+      "key": "level.printedEaveM",
+      "value": 4.67,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "datum marker +4,67, level line at row 303",
+      "interpretation": "The printed eave datum, at the top of the wall assembly on the outside.",
+      "status": "SOURCE_EXACT",
+      "note": "The roof surface measured off the section ink crosses the outer wall face at +4.64, so the printed datum sits 3 cm above the structural plane. The model uses the derived plane; see level.eaveM."
+    },
+    {
+      "key": "level.ridgeM",
+      "value": 7.95,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "datum marker +7,95, level line at row 65",
+      "interpretation": "Ridge of the main gable roof, above ground finished floor level.",
+      "status": "SOURCE_EXACT",
+      "note": "The roof ink's apex is at row 65 by the fitted slope lines, which is 7.950 m at the established scale."
+    },
+    {
+      "key": "roof.pitchDeg",
+      "value": 40,
+      "unit": "deg",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "annotation 40 degrees with a leader to the roof plane",
+      "interpretation": "Pitch of both planes of the main gable roof.",
+      "status": "SOURCE_EXACT",
+      "note": "Independently measured by least-squares fit of the right roof edge over rows 80..220: 40.014 degrees, max residual 0.61 px. The left edge gives 39.77 degrees, contaminated by the annotation leader crossing it."
+    },
+    {
+      "key": "level.eaveM",
+      "value": 4.63556,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "derived: ridge 7.95 minus half the 7.90 span times tan(40 degrees)",
+      "interpretation": "Level at which the roof plane crosses the outer wall face, and therefore the top of the attic side walls.",
+      "status": "SOURCE_DERIVED",
+      "note": "7.95 - 3.95 x tan(40 deg) = 4.63556. The printed +4,67 datum is 0.034 m higher; taking the printed datum instead would make the measured pitch 39.71 degrees rather than the printed 40."
+    },
+    {
+      "key": "building.heightM",
+      "value": 8.27,
+      "unit": "m",
+      "source": "https://www.archon.pl/projekty-domow/projekt-dom-w-marcowkach-ge-m2fa281446a8ca (published facts table)",
+      "locator": "published facts table, 'wysokosc budynku'",
+      "interpretation": "Total building height above terrain.",
+      "status": "SOURCE_EXACT",
+      "note": "7.95 above the ground finished floor plus the 0.32 terrain offset is 8.27 exactly, which confirms that the section's datums and the published height share one interpretation."
+    },
+    {
+      "key": "footprint.areaM2",
+      "value": 131.16,
+      "unit": "m2",
+      "source": "https://www.archon.pl/projekty-domow/projekt-dom-w-marcowkach-ge-m2fa281446a8ca (published facts table)",
+      "locator": "published facts table, 'powierzchnia zabudowy'",
+      "interpretation": "Published footprint area.",
+      "status": "SOURCE_EXACT",
+      "note": "The transcribed L footprint gives 7.90 x 12.60 + 4.15 x 7.50 = 130.67 m2, 0.37 percent below the published figure."
+    },
+    {
+      "key": "garage.clearHeightM",
+      "value": 2.52,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "vertical dimension 252 in the garage",
+      "interpretation": "Garage floor-to-soffit clear height.",
+      "status": "SOURCE_EXACT"
+    },
+    {
+      "key": "roof.flatTopM",
+      "value": 2.88,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "garage roof fill, rows 433..458 at columns 850 and 950",
+      "interpretation": "Top of the garage's flat roof.",
+      "status": "SOURCE_DERIVED",
+      "note": "Row 433 is 2.879 m at the established scale."
+    },
+    {
+      "key": "roof.flatThicknessM",
+      "value": 0.34,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "garage roof fill thickness, 26 px",
+      "interpretation": "Depth of the flat roof build-up.",
+      "status": "SOURCE_DERIVED",
+      "note": "26 px = 0.358 m measured; 0.34 is taken so that the soffit lands on the printed 252 clear height."
+    },
+    {
+      "key": "roof.coveringThicknessM",
+      "value": 0.1,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "roof band width across rows 120, 150 and 180 (11 to 12 px horizontally)",
+      "interpretation": "Depth of the main roof build-up, perpendicular to the plane.",
+      "status": "SOURCE_DERIVED",
+      "note": "A horizontal cut of 11.5 px through a band at 40 degrees is 11.5 x sin(40 deg) = 7.4 px = 0.102 m perpendicular."
+    },
+    {
+      "key": "roof.buildUpDepthM",
+      "value": 0.21109,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "derived from the printed 130 knee wall and the derived eave plane",
+      "interpretation": "Depth of the main roof build-up, perpendicular to the plane: rafters, insulation and covering together.",
+      "status": "SOURCE_DERIVED",
+      "note": "The printed knee wall puts the top of the masonry at 3.06 + 1.30 = 4.36. The roof plane crosses the outer wall face at 4.63556. The vertical gap between them is 0.27556 m, which is 0.21109 m measured perpendicular to a 40 degree plane. Taking that as the build-up makes the roof's underside land exactly on the knee wall, so the two printed figures reconcile with no gap and no overlap. The 0.10 m band the section fills solid is the covering alone; the rafters below it are drawn as thin lines."
+    },
+    {
+      "key": "roof.overhangM",
+      "value": 0.0,
+      "unit": "m",
+      "source": "przekroj-budynku-projekt-dom-w-marcowkach-ge (SECTION, asset_0617fe3c8e35, 1138x854)",
+      "locator": "left roof edge traced to row 305, reaching x=129",
+      "interpretation": "Eave overhang of the main roof.",
+      "status": "SOURCE_DERIVED",
+      "note": "The roof edge lands on the outer wall face at x=128..129 rather than beyond it, and the upper plan shows no verge projection either: the band above the attic's rear wall is the 100 cm rear terrace, at exactly the 38 px the ground plan gives it."
+    },
+    {
+      "key": "attic.footprintMatchesMainBody",
+      "value": 1,
+      "unit": "m",
+      "source": "rzut-poddasza-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_UPPER, asset_0941a5c9b556, 853x853)",
+      "locator": "attic outer walls at x=47..345 and z=195..671",
+      "interpretation": "The attic occupies the main body's footprint and no more: 298 x 476 px against the ground plan's main body at 298 x 477 px.",
+      "status": "SOURCE_CORROBORATED",
+      "note": "Its right wall therefore sits 4.15 m inboard of the building's own right facade, which is the recessed upper wall this stage needs."
+    },
+    {
+      "key": "opening.gableWidthM",
+      "value": 2.7,
+      "unit": "m",
+      "source": "rzut-poddasza-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_UPPER, asset_0941a5c9b556, 853x853)",
+      "locator": "callout 270/320 on the attic front wall",
+      "interpretation": "Structural width of the front gable opening.",
+      "status": "SOURCE_EXACT",
+      "note": "The gap in the drawn wall measures 102 px = 2.695 m, which is the printed 270 to within a quarter of a pixel."
+    },
+    {
+      "key": "opening.gableHeightM",
+      "value": 3.2,
+      "unit": "m",
+      "source": "rzut-poddasza-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_UPPER, asset_0941a5c9b556, 853x853)",
+      "locator": "callout 270/320 on the attic front wall",
+      "interpretation": "Height of the front gable opening at its tall edge.",
+      "status": "SOURCE_EXACT",
+      "note": "The front elevation shows the head raked parallel to the roof, so 320 is the height on the ridge side. The elevation render places the head about 0.35 m lower than 320 from the attic floor implies; the dimensioned callout is preferred over the render."
+    },
+    {
+      "key": "opening.gableOffsetM",
+      "value": 3.94,
+      "unit": "m",
+      "source": "rzut-poddasza-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_UPPER, asset_0941a5c9b556, 853x853)",
+      "locator": "attic front wall solid from x=47..195, opening from x=196",
+      "interpretation": "Distance from the attic's -X outer face to the opening's near edge.",
+      "status": "SOURCE_DERIVED",
+      "note": "149 px = 3.937 m. The near edge therefore sits under the ridge at 3.95 m, which the front elevation confirms: the glazing's left edge is at image x=610 against a ridge apex at x=607."
+    },
+    {
+      "key": "opening.gableSillM",
+      "value": 3.06,
+      "unit": "m",
+      "source": "rzut-poddasza-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_UPPER, asset_0941a5c9b556, 853x853)",
+      "locator": "the callout is on the attic plan",
+      "interpretation": "Sill of the front gable opening, at the attic finished floor: it is a door onto the terrace over the garage.",
+      "status": "SOURCE_DERIVED",
+      "note": "The garage's flat roof at +2.88 is 0.18 m below it, which is the usual step down to a terrace."
+    },
+    {
+      "key": "opening.gableHeadRake",
+      "value": 40,
+      "unit": "deg",
+      "source": "elewacja frontowa (ELEVATION_FRONT, asset_9f4c7e9a9e16, 1280x597)",
+      "locator": "the glazing's head runs parallel to the right roof slope",
+      "interpretation": "The head of the gable opening is raked at the roof pitch rather than level.",
+      "status": "SOURCE_CORROBORATED",
+      "note": "Measured on the elevation the roof edges give 39.52 and 39.68 degrees, against a printed 40. A level head is impossible here: a 2.70 m opening 3.20 m tall starting 3.94 m along the wall would project 0.67 m out through the gable."
+    }
+  ],
+  "derived": {
+    "gableOpeningHeightFarM": 0.93443,
+    "derivation": "3.20 - 2.70 x tan(40 deg) = 0.93443, the head height at the opening's far edge once it is raked at the roof pitch.",
+    "atticWallTopAtEaveM": 4.36,
+    "atticWallTopAtRidgeM": 7.67444,
+    "derivationWallTops": "The attic walls stop at the roof's underside, not at its top surface: the side walls flat at the printed knee-wall top 4.36, and the gable ends on the same plane, rising to 7.67444 under the ridge. Stopping them at the roof's top surface instead would put 0.27556 m of wall inside the roof."
+  },
+  "observedButNotModelled": [
+    {
+      "what": "Two 234/303 openings in the rear gable wall",
+      "source": "rzut-poddasza-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_UPPER, asset_0941a5c9b556, 853x853)",
+      "why": "The profiled-wall path compiles one opening per wall at this stage, because two raked heads can cross and reorder the bands its tiling pairs up. A second opening would be refused by name, not dropped."
+    },
+    {
+      "what": "Three 78/118 roof windows in the main roof planes",
+      "source": "rzut-poddasza-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_UPPER, asset_0941a5c9b556, 853x853)",
+      "why": "Roof openings are not in this stage's roof compiler. The right elevation shows two of them in the +X plane."
+    },
+    {
+      "what": "Balcony slab in front of the gable opening, about 0.98 m deep",
+      "source": "rzut-poddasza-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_UPPER, asset_0941a5c9b556, 853x853)",
+      "why": "Optional in the stage brief and not needed by any gate here."
+    },
+    {
+      "what": "Chimney, right of the ridge",
+      "source": "elewacja frontowa (ELEVATION_FRONT, asset_9f4c7e9a9e16, 1280x597)",
+      "why": "Its plan position was not established cleanly enough to place it from source rather than from the render."
+    },
+    {
+      "what": "Ground storey openings, the entrance and the garage door",
+      "source": "rzut-parteru-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_GROUND, asset_eef4a69d3303, 853x853)",
+      "why": "Outside the shell and roof proof this stage is scoped to."
+    },
+    {
+      "what": "Rear terrace and entrance canopy, 100 cm each",
+      "source": "rzut-parteru-z-powierzchniami-projekt-dom-w-marcowkach-ge (PLAN_GROUND, asset_eef4a69d3303, 853x853)",
+      "why": "Outside the 1260 chain and outside the exterior shell."
+    }
+  ],
+  "unresolved": [
+    {
+      "field": "roof.verge",
+      "why": "Whether the roof has a verge projection at the gable ends is not dimensioned. The upper plan's band above the rear wall measures exactly the 100 cm rear terrace, so the model uses zero; a small verge would not show at this scale.",
+      "status": "UNRESOLVED"
+    },
+    {
+      "field": "opening.gableHeadClearance",
+      "why": "The vertical gap between the raked head and the roof soffit is not dimensioned. The model takes the printed 320 at the tall edge, which leaves 1.68 m of cladding above it; the elevation render suggests nearer 1.3 m.",
+      "status": "UNRESOLVED"
+    },
+    {
+      "field": "partition.houseGarageThicknessM",
+      "why": "The wall between house and garage is one 0.45 m wall in the drawings. This stage's ring compiler has no shared-wall or T-junction semantics, so the two shells each carry their own 0.45 m wall and the modelled partition is 0.90 m. The exterior envelope is unaffected.",
+      "status": "UNRESOLVED"
+    }
+  ]
+}

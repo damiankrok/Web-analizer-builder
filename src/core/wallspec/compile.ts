@@ -53,6 +53,7 @@ import type {
   WallExtent,
   WallPart,
   WallSpec,
+  WallTopProfile,
 } from './contracts.js'
 import { wallPoint } from './contracts.js'
 
@@ -128,6 +129,37 @@ export function checkWall(w: WallSpec): WallDiagnostic[] {
   if (!Number.isFinite(w.heightM) || w.heightM <= 0) bad('heightM', w.heightM)
   if (!Number.isFinite(w.thicknessM) || w.thicknessM <= 0) bad('thicknessM', w.thicknessM)
 
+  const pts = w.topProfile?.points
+  if (pts) {
+    if (pts.length < 2) {
+      out.push({
+        code: 'INVALID_WALL_PROFILE',
+        severity: 'ERROR',
+        message: `wall ${w.id}: a top profile needs at least two points, got ${pts.length}`,
+        wallId: w.id,
+      })
+    } else {
+      for (let i = 0; i < pts.length; i++) {
+        const q = pts[i]
+        if (!Number.isFinite(q.u) || !Number.isFinite(q.topM) || q.topM <= 0) {
+          out.push({
+            code: 'INVALID_WALL_PROFILE',
+            severity: 'ERROR',
+            message: `wall ${w.id}: profile point ${i} is (${q.u}, ${q.topM}); u and a positive topM are required`,
+            wallId: w.id,
+          })
+        } else if (i > 0 && q.u < pts[i - 1].u - AXIS_EPS) {
+          out.push({
+            code: 'INVALID_WALL_PROFILE',
+            severity: 'ERROR',
+            message: `wall ${w.id}: profile point ${i} is at u = ${q.u}, behind point ${i - 1} at ${pts[i - 1].u}; points must run along the wall`,
+            wallId: w.id,
+          })
+        }
+      }
+    }
+  }
+
   const lu = len(w.u)
   const lup = len(w.up)
   const perp = dot(w.u, w.up)
@@ -165,8 +197,9 @@ function checkOpening(o: OpeningSpec, host: WallSpec, extent: WallExtent): WallD
   const a0 = o.offsetM
   const a1 = o.offsetM + o.widthM
   const b0 = o.sillM
-  const b1 = o.sillM + o.heightM
-  if (a0 < -BREAK_EPS || b0 < -BREAK_EPS || a1 > host.lengthM + BREAK_EPS || b1 > host.heightM + BREAK_EPS) {
+  const b1 = Math.max(o.sillM + o.heightM, o.sillM + (o.heightFarM ?? o.heightM))
+  const nominalTop = host.topProfile ? Math.max(...host.topProfile.points.map((q) => q.topM)) : host.heightM
+  if (a0 < -BREAK_EPS || b0 < -BREAK_EPS || a1 > host.lengthM + BREAK_EPS || b1 > nominalTop + BREAK_EPS) {
     out.push({
       code: 'OPENING_OUTSIDE_HOST',
       severity: 'ERROR',
@@ -180,8 +213,22 @@ function checkOpening(o: OpeningSpec, host: WallSpec, extent: WallExtent): WallD
   }
   // Flush with an edge leaves no material on that side. The cut is legitimate
   // but it is a different element — a doorway to the wall's end, or a wall that
-  // stops at the head — and this stage does not build those.
-  if (a0 <= BREAK_EPS || b0 <= BREAK_EPS || a1 >= host.lengthM - BREAK_EPS || b1 >= host.heightM - BREAK_EPS) {
+  // stops at the head — and the rectangular path does not build those.
+  //
+  // The base is the one exception, and only on the profiled path: Marcowki's
+  // gable glazing is a door onto a balcony, so its sill *is* the attic floor,
+  // and the profiled tiling emits that correctly by collapsing the band below
+  // the sill and leaving the wall's underside open across the opening. The
+  // rectangular path's rule is deliberately left exactly as STAGE
+  // WEB-PIVOT-01 proved it.
+  const profiled = host.topProfile !== undefined || o.heightFarM !== undefined
+  const baseFlush = b0 <= BREAK_EPS
+  if (
+    a0 <= BREAK_EPS ||
+    a1 >= host.lengthM - BREAK_EPS ||
+    b1 >= nominalTop - BREAK_EPS ||
+    (baseFlush && !profiled)
+  ) {
     out.push({
       code: 'OPENING_TOUCHES_WALL_EDGE',
       severity: 'ERROR',
@@ -193,6 +240,28 @@ function checkOpening(o: OpeningSpec, host: WallSpec, extent: WallExtent): WallD
     })
     return out
   }
+  if (host.topProfile) {
+    // Under a sloped top, "inside the wall" is not a rectangle. Both head
+    // corners have to clear the profile, or the cut would open the roof.
+    const headNear = o.sillM + o.heightM
+    const headFar = o.sillM + (o.heightFarM ?? o.heightM)
+    const topNear = profileTopAt(host, a0)
+    const topFar = profileTopAt(host, a1)
+    if (headNear > topNear + BREAK_EPS || headFar > topFar + BREAK_EPS) {
+      out.push({
+        code: 'OPENING_ABOVE_WALL_PROFILE',
+        severity: 'ERROR',
+        message:
+          `opening ${o.id} reaches ${headNear.toFixed(3)} m at u = ${a0} and ${headFar.toFixed(3)} m at ` +
+          `u = ${a1}, where wall ${host.id} is only ${topNear.toFixed(3)} m and ${topFar.toFixed(3)} m high; ` +
+          'the opening is not clipped to fit',
+        wallId: host.id,
+        openingId: o.id,
+      })
+      return out
+    }
+  }
+
   // The opening is inside the wall the drawing describes. It may still be
   // inside the part of it a junction took away, and that is refused rather than
   // repaired: moving the opening would put a window somewhere nobody asked for,
@@ -314,6 +383,192 @@ function compileWall(
     const c = g.insetM
     quad(out, P(a0, b0, c), P(a1, b0, c), P(a1, b1, c), P(a0, b1, c), 'GLAZING', g.id, w.id, o.id)
   }
+}
+
+/**
+ * Height of a wall's top above its base at position `u`.
+ *
+ * Absent profile means a flat top at the nominal height, which is what every
+ * wall in STAGE WEB-PIVOT-01, 01B and 01C has. Outside the profile's own span
+ * the first and last points hold, so a profile never has to restate the ends.
+ */
+export function profileTopAt(w: WallSpec, u: number): number {
+  const pts = w.topProfile?.points
+  if (!pts || pts.length === 0) return w.heightM
+  if (u <= pts[0].u) return pts[0].topM
+  const last = pts[pts.length - 1]
+  if (u >= last.u) return last.topM
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const a = pts[i]
+    const b = pts[i + 1]
+    if (u >= a.u && u <= b.u) {
+      const span = b.u - a.u
+      return span <= BREAK_EPS ? b.topM : a.topM + ((u - a.u) / span) * (b.topM - a.topM)
+    }
+  }
+  return last.topM
+}
+
+/** Head height of an opening above the wall base at `u`, raked or level. */
+const headAt = (o: OpeningSpec, u: number): number => {
+  const near = o.sillM + o.heightM
+  if (o.heightFarM === undefined) return near
+  const far = o.sillM + o.heightFarM
+  const span = o.widthM
+  return span <= BREAK_EPS ? far : near + ((u - o.offsetM) / span) * (far - near)
+}
+
+/** True when a wall needs the profiled path rather than the proven rectangular one. */
+const needsProfiledPath = (w: WallSpec, openings: readonly OpeningSpec[]): boolean =>
+  w.topProfile !== undefined || openings.some((o) => o.heightFarM !== undefined)
+
+const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > hi ? hi : x)
+
+/**
+ * A wall whose top is a polyline, whose opening may have a raked head, or both.
+ *
+ * ## Why this is a second path and not a generalisation
+ *
+ * STAGE WEB-PIVOT-01's tiling is proven, and everything built on it since — the
+ * junction extents, the ring, the ownership schedules — is proven against the
+ * triangles it emits. A wall with a flat top and level openings still goes
+ * through that code, untouched, and produces the identical triangles it always
+ * did. This path runs only for the shapes the old one cannot express.
+ *
+ * ## How it stays watertight with slanted edges
+ *
+ * The face is tiled in vertical strips rather than on a 2D grid, and every
+ * strip is split into the **same three bands** at both of its ends:
+ *
+ *     0  ..  sill  ..  head(u)  ..  top(u)
+ *
+ * The two middle boundaries come from the opening — clamped into `[0, top(u)]`
+ * so they stay ordered — and they are computed at *every* strip boundary, not
+ * only inside the opening. That is the whole trick: two neighbouring strips
+ * always cut their shared vertical edge at the same four heights, so no face
+ * ever meets the middle of another face's edge. Outside the opening's span the
+ * middle band is simply solid; where a band collapses to zero height the quad
+ * degenerates to a triangle or vanishes, and both cases keep the edge count
+ * right.
+ *
+ * At most one opening per wall takes this path. Two raked heads could cross
+ * each other and reorder the bands, which would silently break the pairing, so
+ * a second opening is refused by name instead.
+ */
+function compileProfiledWall(
+  w: WallSpec,
+  extent: WallExtent,
+  openings: readonly OpeningSpec[],
+  glazingFor: ReadonlyMap<string, GlazingSpec>,
+  out: CompiledTri[],
+): void {
+  const P = (a: number, b: number, c: number): Vec3 => wallPoint(w, a, b, c)
+  const T = w.thicknessM
+  const A0 = extent.a0
+  const A1 = extent.a1
+  const hole = openings[0]
+
+  const top = (u: number): number => profileTopAt(w, u)
+  /** The three band boundaries at `u`, always non-decreasing and always four long. */
+  const bands = (u: number): [number, number, number, number] => {
+    const t0 = top(u)
+    if (!hole) return [0, t0, t0, t0]
+    const sill = clamp(hole.sillM, 0, t0)
+    const head = clamp(Math.max(headAt(hole, u), hole.sillM), sill, t0)
+    return [0, sill, head, t0]
+  }
+
+  const aBreaks = breaks(
+    A0,
+    A1,
+    [
+      ...(w.topProfile?.points ?? []).map((q) => q.u),
+      ...(hole ? [hole.offsetM, hole.offsetM + hole.widthM] : []),
+    ].filter((u) => u > A0 + BREAK_EPS && u < A1 - BREAK_EPS),
+  )
+
+  /** Emit a planar quad, collapsing either degenerate edge to a triangle. */
+  const face = (
+    p0: Vec3,
+    p1: Vec3,
+    p2: Vec3,
+    p3: Vec3,
+    degenerate01: boolean,
+    degenerate23: boolean,
+    part: WallPart,
+    ownerId: string,
+    openingId?: string,
+    contactId?: string,
+  ): void => {
+    if (degenerate01 && degenerate23) return
+    if (degenerate01) out.push({ a: p0, b: p2, c: p3, part, ownerId, wallId: w.id, openingId, contactId })
+    else if (degenerate23) out.push({ a: p0, b: p1, c: p2, part, ownerId, wallId: w.id, openingId, contactId })
+    else quad(out, p0, p1, p2, p3, part, ownerId, w.id, openingId, contactId)
+  }
+
+  const inHole = (u0: number, u1: number): boolean =>
+    hole !== undefined && u0 >= hole.offsetM - BREAK_EPS && u1 <= hole.offsetM + hole.widthM + BREAK_EPS
+
+  for (let i = 0; i + 1 < aBreaks.length; i++) {
+    const u0 = aBreaks[i]
+    const u1 = aBreaks[i + 1]
+    const L = bands(u0)
+    const R = bands(u1)
+    const void1 = inHole(u0, u1)
+
+    for (let j = 0; j < 3; j++) {
+      if (j === 1 && void1) continue
+      const dl = Math.abs(L[j + 1] - L[j]) <= BREAK_EPS
+      const dr = Math.abs(R[j + 1] - R[j]) <= BREAK_EPS
+      // Outer face, outward +n.
+      face(P(u0, L[j], 0), P(u1, R[j], 0), P(u1, R[j + 1], 0), P(u0, L[j + 1], 0), dr, dl, 'WALL', w.id)
+      // Inner face, outward -n: the same corners the other way round.
+      face(P(u0, L[j], T), P(u0, L[j + 1], T), P(u1, R[j + 1], T), P(u1, R[j], T), dl, dr, 'WALL_INNER', w.id)
+    }
+
+    // Bottom, outward -up — but not under an opening that reaches the base: a
+    // door to floor level has no wall underneath it to close off.
+    const openToBase = void1 && L[1] <= BREAK_EPS && R[1] <= BREAK_EPS
+    if (!openToBase) quad(out, P(u0, 0, 0), P(u0, 0, T), P(u1, 0, T), P(u1, 0, 0), 'WALL', w.id, w.id)
+    // Top, following the profile; its outward normal leans with the slope.
+    quad(out, P(u0, L[3], 0), P(u1, R[3], 0), P(u1, R[3], T), P(u0, L[3], T), 'WALL', w.id, w.id)
+
+    if (hole && void1) {
+      const id = hole.id
+      // Sill, outward +up; head, outward the other way, both following the strip.
+      // A sill at the wall base is the wall's own underside, already closed (or
+      // deliberately open) above, so it is not emitted twice.
+      if (!openToBase) quad(out, P(u0, L[1], 0), P(u1, R[1], 0), P(u1, R[1], T), P(u0, L[1], T), 'REVEAL', id, w.id, id)
+      quad(out, P(u0, L[2], 0), P(u0, L[2], T), P(u1, R[2], T), P(u1, R[2], 0), 'REVEAL', id, w.id, id)
+    }
+  }
+
+  // Ends, split on the same bands so they meet the faces edge to edge.
+  for (const [u, outward] of [
+    [A0, -1],
+    [A1, 1],
+  ] as const) {
+    const B = bands(u)
+    for (let j = 0; j < 3; j++) {
+      if (Math.abs(B[j + 1] - B[j]) <= BREAK_EPS) continue
+      if (outward < 0) quad(out, P(u, B[j], 0), P(u, B[j + 1], 0), P(u, B[j + 1], T), P(u, B[j], T), 'WALL', w.id, w.id)
+      else quad(out, P(u, B[j], 0), P(u, B[j], T), P(u, B[j + 1], T), P(u, B[j + 1], 0), 'WALL', w.id, w.id)
+    }
+  }
+
+  if (!hole) return
+  // Jambs: the opening's two vertical edges, each spanning its own band there.
+  const h0 = hole.offsetM
+  const h1 = hole.offsetM + hole.widthM
+  const B0 = bands(h0)
+  const B1 = bands(h1)
+  quad(out, P(h0, B0[1], 0), P(h0, B0[1], T), P(h0, B0[2], T), P(h0, B0[2], 0), 'REVEAL', hole.id, w.id, hole.id)
+  quad(out, P(h1, B1[1], 0), P(h1, B1[2], 0), P(h1, B1[2], T), P(h1, B1[1], T), 'REVEAL', hole.id, w.id, hole.id)
+
+  const g = glazingFor.get(hole.id)
+  if (!g) return
+  const c = g.insetM
+  quad(out, P(h0, B0[1], c), P(h1, B1[1], c), P(h1, B1[2], c), P(h0, B0[2], c), 'GLAZING', g.id, w.id, hole.id)
 }
 
 /**
@@ -470,7 +725,23 @@ export function compileWalls(
   for (const w of usable) {
     const openings = accepted.get(w.id) ?? []
     const before = tris.length
-    compileWall(w, extentOf.get(w.id)!, openings, glazingFor, tris)
+    const extent = extentOf.get(w.id)!
+    if (needsProfiledPath(w, openings)) {
+      if (openings.length > 1) {
+        diagnostics.push({
+          code: 'TOO_MANY_OPENINGS_ON_PROFILED_WALL',
+          severity: 'ERROR',
+          message:
+            `wall ${w.id} has a sloped top or a raked head and ${openings.length} openings; this stage ` +
+            'compiles one opening on such a wall, because two raked heads can cross and reorder the ' +
+            'bands the tiling pairs up. The extra openings were not cut',
+          wallId: w.id,
+        })
+      }
+      compileProfiledWall(w, extent, openings.slice(0, 1), glazingFor, tris)
+    } else {
+      compileWall(w, extent, openings, glazingFor, tris)
+    }
     compiled.push({ wallId: w.id, openingIds: openings.map((o) => o.id), triCount: tris.length - before })
   }
 

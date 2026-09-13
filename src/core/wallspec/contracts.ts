@@ -74,6 +74,11 @@ export type WallSpec = {
   lengthM: number
   heightM: number
   thicknessM: number
+  /**
+   * Sloped top, for a gable end. Absent means a flat top at `heightM`, which is
+   * the only shape STAGE WEB-PIVOT-01, 01B and 01C ever compile.
+   */
+  topProfile?: WallTopProfile
 }
 
 /**
@@ -88,6 +93,24 @@ export type WallSpec = {
  * a different element and are not part of this stage; `cut` exists so that a
  * later stage adds them as a new case rather than by reinterpreting this one.
  */
+/**
+ * A wall's top edge, as a height above the wall base at each position along it.
+ *
+ * STAGE WEB-PIVOT-02. A gable end is a rectangle with a triangle on top, and it
+ * is one piece of wall material, not a rectangle plus a decorative patch. The
+ * profile says so: `points` are `(u, top)` pairs in the wall's own frame, joined
+ * by straight lines, and the wall is the region between `b = 0` and that line.
+ *
+ * `heightM` stays the wall's nominal height and is what an absent profile means
+ * — a flat top at `heightM`. A profile never changes `heightM`; like
+ * `WallExtent`, it describes what is emitted, and openings are still measured
+ * against the wall's own origin.
+ */
+export type WallTopProfile = {
+  /** At least two points, sorted by `u`, spanning the wall's emitted extent. */
+  points: ReadonlyArray<{ u: number; topM: number }>
+}
+
 export type OpeningSpec = {
   id: string
   hostWallId: string
@@ -97,6 +120,16 @@ export type OpeningSpec = {
   sillM: number
   widthM: number
   heightM: number
+  /**
+   * Head height at the far edge, when the head is raked.
+   *
+   * STAGE WEB-PIVOT-02. Marcowki's gable glazing has a head that runs parallel
+   * to the roof slope, so the opening is a right trapezoid rather than a
+   * rectangle. `heightM` is the height at `offsetM`; this is the height at
+   * `offsetM + widthM`. Absent means a level head, which is every opening the
+   * earlier stages proved.
+   */
+  heightFarM?: number
   cut: 'THROUGH'
 }
 
@@ -171,6 +204,9 @@ export type WallDiagnosticCode =
   | 'GLAZING_OUTSIDE_THICKNESS'
   | 'INVALID_WALL_EXTENT'
   | 'OPENING_IN_TRIMMED_ZONE'
+  | 'INVALID_WALL_PROFILE'
+  | 'OPENING_ABOVE_WALL_PROFILE'
+  | 'TOO_MANY_OPENINGS_ON_PROFILED_WALL'
 
 export type WallDiagnostic = {
   code: WallDiagnosticCode
