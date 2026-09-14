@@ -30,9 +30,15 @@ import type { Vec3 } from '../contracts/geometry.js'
 import type { CompiledTri, WallSpec } from './contracts.js'
 import type { BuildingSpec, SlabSpec, StoreyShellSpec } from './architectural.js'
 import { compileStoreyRing, type RingCompileDiagnostic, type StoreyRingResult } from './ring.js'
-import { compileRoofs, type CompiledRoof, type RoofDiagnostic } from './roof.js'
+import {
+  compileRoofs,
+  type CompiledRoof,
+  type CompiledRoofOpening,
+  type RoofDiagnostic,
+  type RoofPlaneFrame,
+} from './roof.js'
 
-export type ElementKind = 'WALL' | 'SLAB' | 'ROOF'
+export type ElementKind = 'WALL' | 'SLAB' | 'ROOF' | 'MASS'
 
 /**
  * Material semantic of a building triangle.
@@ -42,10 +48,29 @@ export type ElementKind = 'WALL' | 'SLAB' | 'ROOF'
  * the ring oracles were written against, and the names are the study shader's
  * `BuildPart` names so the renderer needs no adapter.
  */
-export type BuildingPart = CompiledTri['part'] | 'SLAB' | 'ROOF'
+export type BuildingPart =
+  | CompiledTri['part']
+  | 'SLAB'
+  | 'ROOF'
+  | 'ROOF_REVEAL'
+  | 'ROOF_FRAME'
+  | 'ROOF_GLAZING'
+  | 'MASS'
 
 /** Parts that make up closed solids. Glazing is a surface, not a solid. */
-export const SOLID_BUILDING_PARTS: readonly BuildingPart[] = ['WALL', 'WALL_INNER', 'REVEAL', 'SLAB', 'ROOF']
+export const SOLID_BUILDING_PARTS: readonly BuildingPart[] = [
+  'WALL',
+  'WALL_INNER',
+  'REVEAL',
+  'SLAB',
+  'ROOF',
+  'ROOF_REVEAL',
+  'ROOF_FRAME',
+  'MASS',
+]
+
+/** The roof covering itself, without the units that sit in its openings. */
+export const ROOF_FABRIC_PARTS: readonly BuildingPart[] = ['ROOF', 'ROOF_REVEAL']
 
 export const isSolidBuildingPart = (p: BuildingPart): boolean => SOLID_BUILDING_PARTS.includes(p)
 
@@ -71,6 +96,10 @@ export type BuildingDiagnosticCode =
   | 'INVALID_SLAB'
   | 'WALL_IN_NO_SHELL'
   | 'WALL_TOP_ROOF_UNKNOWN'
+  | 'INVALID_MASS'
+  | 'DUPLICATE_MASS_ID'
+  | 'MASS_PENETRATION_UNKNOWN_ROOF'
+  | 'MASS_PENETRATION_NOT_CUT'
 
 export type BuildingDiagnostic = {
   code: BuildingDiagnosticCode
@@ -79,6 +108,7 @@ export type BuildingDiagnostic = {
   shellId?: string
   wallId?: string
   slabId?: string
+  massId?: string
 }
 
 export type CompiledShell = {
@@ -92,11 +122,24 @@ export type CompiledShell = {
 
 export type CompiledSlab = { slabId: string; topM: number; thicknessM: number; areaM2: number }
 
+export type CompiledMass = {
+  massId: string
+  kind: string
+  baseM: number
+  topM: number
+  planAreaM2: number
+  volumeM3: number
+  penetratesRoofIds: string[]
+}
+
 export type BuildingCompileResult = {
   tris: BuildingTri[]
   shells: CompiledShell[]
   slabs: CompiledSlab[]
   roofs: CompiledRoof[]
+  masses: CompiledMass[]
+  roofPlanes: RoofPlaneFrame[]
+  roofOpenings: CompiledRoofOpening[]
   diagnostics: Array<BuildingDiagnostic | RingCompileDiagnostic | RoofDiagnostic>
 }
 
@@ -286,23 +329,106 @@ export function compileBuilding(spec: BuildingSpec): BuildingCompileResult {
     })
   }
 
-  const roofResult = compileRoofs(spec.roofs, spec.levels)
+  const roofResult = compileRoofs(spec.roofs, spec.levels, spec.roofOpenings ?? [], spec.roofOpeningFills ?? [])
   diagnostics.push(...roofResult.diagnostics)
   const roofSpecById = new Map(spec.roofs.map((r) => [r.id, r]))
   for (const t of roofResult.tris) {
-    const rs = roofSpecById.get(t.ownerId)
+    const rs = roofSpecById.get(t.wallId)
     tris.push({
-      ...t,
-      part: 'ROOF',
+      a: t.a,
+      b: t.b,
+      c: t.c,
+      part: t.part,
+      ownerId: t.ownerId,
+      wallId: t.wallId,
+      ...(t.openingId === undefined ? {} : { openingId: t.openingId }),
       elementKind: 'ROOF',
-      elementId: t.ownerId,
+      elementId: t.wallId,
       storeyId: rs?.ownerStoreyId,
       levelId: rs?.eaveLevelId,
       provenanceSource: rs?.provenance.source,
     })
   }
 
-  return { tris, shells, slabs, roofs: roofResult.roofs, diagnostics }
+  // Masses: prismatic solids, and the check that each one's stated roof
+  // penetration has an opening to pass through. The opening is not created
+  // here — a compiler that cut a hole because a solid claimed to need one
+  // could never emit the defect this stage's mutation 5 is about.
+  const masses: CompiledMass[] = []
+  const seenMass = new Set<string>()
+  const cutRoofIds = new Set(roofResult.openings.map((o) => o.roofId))
+  const compiledRoofIds = new Set(roofResult.roofs.map((r) => r.roofId))
+  for (const m of spec.masses ?? []) {
+    if (seenMass.has(m.id)) {
+      diagnostics.push({
+        code: 'DUPLICATE_MASS_ID',
+        severity: 'ERROR',
+        message: `mass id ${m.id} appears more than once; the later record was not compiled`,
+        massId: m.id,
+      })
+      continue
+    }
+    seenMass.add(m.id)
+    const f = m.footprint
+    if (!(f.maxX - f.minX > 1e-9) || !(f.maxZ - f.minZ > 1e-9) || !(m.topM - m.baseM > 1e-9)) {
+      diagnostics.push({
+        code: 'INVALID_MASS',
+        severity: 'ERROR',
+        message:
+          `mass ${m.id} spans ${f.minX}..${f.maxX} by ${f.minZ}..${f.maxZ} between ${m.baseM} and ${m.topM} m, ` +
+          'which has no volume',
+        massId: m.id,
+      })
+      continue
+    }
+    for (const roofId of m.penetratesRoofIds) {
+      if (!compiledRoofIds.has(roofId)) {
+        diagnostics.push({
+          code: 'MASS_PENETRATION_UNKNOWN_ROOF',
+          severity: 'ERROR',
+          message: `mass ${m.id} says it passes through roof ${roofId}, which is not in the spec`,
+          massId: m.id,
+        })
+        continue
+      }
+      if (!cutRoofIds.has(roofId)) {
+        diagnostics.push({
+          code: 'MASS_PENETRATION_NOT_CUT',
+          severity: 'ERROR',
+          message:
+            `mass ${m.id} says it passes through roof ${roofId}, and that roof carries no opening. ` +
+            'A solid driven through intact roof material is the defect this pairing exists to catch',
+          massId: m.id,
+        })
+      }
+    }
+    box(tris, f.minX, f.maxX, f.minZ, f.maxZ, m.baseM, m.topM, 'MASS', {
+      elementKind: 'MASS',
+      elementId: m.id,
+      storeyId: m.ownerStoreyId,
+      provenanceSource: m.provenance.source,
+    })
+    masses.push({
+      massId: m.id,
+      kind: m.kind,
+      baseM: m.baseM,
+      topM: m.topM,
+      planAreaM2: (f.maxX - f.minX) * (f.maxZ - f.minZ),
+      volumeM3: (f.maxX - f.minX) * (f.maxZ - f.minZ) * (m.topM - m.baseM),
+      penetratesRoofIds: [...m.penetratesRoofIds],
+    })
+  }
+
+  return {
+    tris,
+    shells,
+    slabs,
+    roofs: roofResult.roofs,
+    masses,
+    roofPlanes: roofResult.roofs.flatMap((r) => r.planes),
+    roofOpenings: roofResult.openings,
+    diagnostics,
+  }
 }
 
 /** Every triangle of one element, for per-element oracles. */

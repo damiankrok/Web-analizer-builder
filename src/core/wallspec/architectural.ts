@@ -25,6 +25,7 @@
 import type { Vec3 } from '../contracts/geometry.js'
 import type { GlazingSpec, OpeningSpec, WallSpec } from './contracts.js'
 import type { WallJunctionSpec } from './junction.js'
+import type { RoofOpeningFillSpec, RoofOpeningSpec } from './roof.js'
 
 /**
  * How firmly a value is tied to the official source.
@@ -173,6 +174,43 @@ export type RoofSpec = {
   provenance: Provenance
 }
 
+export type MassKind =
+  /** A flue stack. */
+  | 'CHIMNEY'
+  /** Anything else the drawings show as a solid rectangular shaft or block. */
+  | 'SHAFT'
+
+/**
+ * A generic prismatic architectural solid — STAGE WEB-PIVOT-05A §10.
+ *
+ * Not a chimney type. A chimney is one `kind` of it, and the compiler knows
+ * nothing about flues, caps, flashings or draughts: it extrudes a plan
+ * rectangle between two elevations and records which roofs the solid passes
+ * through. Everything a chimney needs beyond that is either drawn on a source
+ * or is not modelled, which is the rule this stage works to.
+ *
+ * ## The penetration is stated, not inferred
+ *
+ * `penetratesRoofIds` names the roofs the solid crosses. It does not cut them
+ * — the roof's own `RoofOpeningSpec` does — and that separation is the point:
+ * a solid that claims to pass through a roof with no opening to match is a
+ * mass pushed through intact material, which is the defect, and naming both
+ * independently is what lets an oracle find it instead of a compiler hiding
+ * it.
+ */
+export type MassSpec = {
+  id: string
+  kind: MassKind
+  /** World plan rectangle. */
+  footprint: { minX: number; maxX: number; minZ: number; maxZ: number }
+  baseM: number
+  topM: number
+  ownerStoreyId: string
+  /** Roofs this solid is stated to pass through. */
+  penetratesRoofIds: string[]
+  provenance: Provenance
+}
+
 /**
  * The whole description.
  *
@@ -198,6 +236,12 @@ export type BuildingSpec = {
   glazing: GlazingSpec[]
   slabs: SlabSpec[]
   roofs: RoofSpec[]
+  /** Openings cut through roof planes. Empty until STAGE WEB-PIVOT-05A. */
+  roofOpenings?: RoofOpeningSpec[]
+  /** The units that fill those openings. */
+  roofOpeningFills?: RoofOpeningFillSpec[]
+  /** Prismatic solids: chimneys and shafts. */
+  masses?: MassSpec[]
   /** Values the source did not settle, kept where a reader will see them. */
   unresolved: Array<{ field: string; why: string; provenance: Provenance }>
   provenance: Provenance

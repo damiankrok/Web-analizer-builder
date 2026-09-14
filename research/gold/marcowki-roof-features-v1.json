@@ -1,0 +1,259 @@
+{
+  "schemaVersion": "marcowki-roof-features-1.0.0",
+  "id": "marcowki-roof-features-v1",
+  "kind": "GOLD_FIXTURE",
+  "notForProduction": "Development only. Nothing in the production analyzer reads this file, and no coordinate in it is available to the automatic URL->model flow.",
+  "project": "Dom w marcówkach (GE)",
+  "projectCode": "m2fa281446a8ca",
+  "sourcePackageId": "pkg_29b62d3714de8bc4",
+  "sourcePackageContentHash": "29b62d3714de8bc473b81f504518eb17efc4e6774dbde3448c86d839af4da940",
+
+  "method": {
+    "frame": "The STAGE WEB-PIVOT-02 world frame: +X east, +Y up, +Z south, origin at the outer face of the main body's north-west corner. The main body is x 0..7.90, z 0..12.60; the ridge runs along Z at x 3.95; the eave plane is 4.63556 and the ridge 7.95.",
+    "planCalibration": "scripts/plan-calibration.ts, unchanged. ground: x px 58..513 = 0..12.05 m, z px 259..735 = 0..12.60 m (37.759 / 37.778 px per m). upper: x px 47..345.2 = 0..7.90 m, z px 195.3..670.8 = 0..12.60 m (37.747 / 37.738 px per m). One pixel is 0.0265 m, which is the floor on every SOURCE_DERIVED figure here.",
+    "elevationCalibration": "Two anchors per axis, stated and never detected, as STAGE WEB-PIVOT-05 established them — with one correction this stage measured and applies. FRONT: x 0 at px 376, 59.34 px/m rightwards, y 0 at px 572.8. REAR: x 0 at px 970, 58.73 px/m leftwards, y 0 at px 568.9. EAST: z 13.60 at px 212, 58.9 px/m leftwards. WEST: z -1.00 at px 217, 58.9 px/m rightwards. The two side views' vertical origin is y 0 at px 570.3, not the 575 / 577 STAGE WEB-PIVOT-05 used: both silhouettes top out at py 102, which is the 7.95 ridge, and 575 / 577 would put it at 8.03 / 8.07. The front and rear anchors need no correction — their apexes measure 7.951 and 7.950 against the printed +7,95, and x 3.910 and 3.950 against the ridge at 3.95.",
+    "sectionCalibration": "asset_b1e8c064c1ba, 1138x854. y 0.00 at row 642 and y 3.06 at row 420, so 72.549 px per m; x 0.00 at px 128 and the ridge at px 415, so 72.66 px per m. Both are the STAGE WEB-PIVOT-02 locators, re-read on this package's copy of the section.",
+    "authorityOrder": "A printed dimension beats a raster measurement of a plan; a raster measurement of a plan beats a measurement of a published render. The renders ARCHON publishes as elevations carry no dimension lines, so everything read from one is VISUAL_DERIVED and good to about a decimetre, never better.",
+    "sources": {
+      "asset_8fda78f8654c": "FLOOR_PLAN / GROUND / DIMENSIONED, 853x853 — the ground flue blocks",
+      "asset_8460d17163a4": "FLOOR_PLAN / UPPER_ATTIC / DIMENSIONED, 853x853 — the three 78/118 callouts, the two chimney blocks",
+      "asset_b1e8c064c1ba": "SECTION, 1138x854 — the slab level, the slab thickness, the stair void",
+      "asset_3c991e46a7e7": "ELEVATION / FRONT, 1280x597 — the chimney silhouette and its top",
+      "asset_863c2909651e": "ELEVATION / REAR, 1280x598 — the same silhouette from the other side",
+      "asset_fcb1602240db": "ELEVATION / EAST, 1280x597 — one rooflight, both chimney stacks",
+      "asset_3915ee416ac4": "ELEVATION / WEST, 1280x598 — two rooflights"
+    },
+    "statusMeaning": {
+      "SOURCE_EXACT": "a number printed on a drawing, read directly",
+      "SOURCE_CORROBORATED": "printed once and independently confirmed by a measurement or a second drawing",
+      "SOURCE_DERIVED": "measured in a plan or section raster; no printed dimension covers it",
+      "VISUAL_DERIVED": "measured on a published elevation render through the stated registration; good to about a decimetre and never better",
+      "ASSUMPTION": "a modelling choice no source settles",
+      "UNRESOLVED": "no source settles it and no choice was made"
+    }
+  },
+
+  "upperSlab": {
+    "conflict": {
+      "shellPolygon": { "minX": 0.45, "maxX": 7.45, "minZ": 0.45, "maxZ": 12.15 },
+      "shellSource": "research/gold/marcowki-exterior-shell-v1.json through src/core/wallspec/marcowki-fixture.ts: the main body inset by the 0.45 m external wall.",
+      "interiorPolygon": { "minX": 0.0, "maxX": 7.9, "minZ": 0.0, "maxZ": 12.6 },
+      "interiorSource": "research/gold/marcowki-interior-v1.json, slabs[slab_upper_floor].footprint: 'the main body footprint from marcowki-exterior-shell-v1.json'.",
+      "symptom": "The ground walls run their full 0.45 m thickness from 0.00 to 3.06. A plate on the interior's outline would occupy the same 0.45 m ring over y 2.73..3.06 — 0.33 m of plate inside the wall head, which is the same material emitted twice."
+    },
+    "evidence": [
+      {
+        "id": "section-row-at-slab",
+        "what": "A row of the section at y = 2.90 m (py 432), inside the slab band, reports one unbroken run of ink from px 128 to px 517, then 669..825, then 951..1001. With x = (px - 128) / 72.66 that is X 0.000..5.351, 7.441..9.587 and 11.320..12.008.",
+        "meaning": "The gap 5.351..7.441 is the stair void, which STAGE WEB-PIVOT-04 states as 5.37..7.45 from the ground plan: the section and the plan agree to 0.02 m without either having been fitted to the other. The run reaching px 128 is the wall's OUTER face, so at the slab level the drawing shows one solid from the outer face inwards and does not separate wall from plate.",
+        "status": "SOURCE_DERIVED"
+      },
+      {
+        "id": "section-column-at-slab",
+        "what": "A column of the section at px 300 (X = 2.37) reports the slab band at py 420..444, which is y 2.729..3.060.",
+        "meaning": "Top at the printed +3,06 datum and 0.331 m deep, against the 0.33 m the shell gold carries. The level registration is unchanged by this stage.",
+        "status": "SOURCE_DERIVED"
+      },
+      {
+        "id": "wall-is-one-solid",
+        "what": "The section draws the external wall as a single 0.45 m fill (px 128..160) unbroken from the foundation to the eave. No hairline separates wall from plate at the slab level: the row scan above finds one run, not two.",
+        "meaning": "The drawing gives the 0.45 m zone to the wall and shows no bearing line inside it. The plate therefore cannot be modelled across that zone without emitting the wall's material a second time, and the depth the real plate bears into the wall is not drawn anywhere.",
+        "status": "SOURCE_DERIVED"
+      },
+      {
+        "id": "attic-stands-on-the-same-footprint",
+        "what": "The attic ring is the same 7.90 x 12.60 rectangle with the same 0.45 m walls (marcowki-exterior-shell-v1.json, attic.footprintMatchesMainBody, corroborated on the attic plan at x px 47..345, z px 195..671).",
+        "meaning": "The attic's walkable floor is bounded by inner faces at x 0.45..7.45, z 0.45..12.15 — the same rectangle the bearing reading gives. The structural plate and the walkable floor coincide in plan except where something stands on the floor.",
+        "status": "SOURCE_CORROBORATED"
+      },
+      {
+        "id": "blocks-stand-on-the-attic-floor",
+        "what": "The attic plan draws two solid blocks standing on the attic floor: x 5.484..6.093, z 4.417..5.027 and x 5.484..6.000, z 8.900..9.452. Both are chimney stacks — see `chimneys` below.",
+        "meaning": "This is the one place where the walkable floor is genuinely not the structural plate, and it is what the FLOOR_FINISH polygon records.",
+        "status": "SOURCE_DERIVED"
+      }
+    ],
+    "resolution": {
+      "verdict": "ONE_PLATE_NOT_TWO_LAYERS",
+      "reasoning": "The two files do not describe different physical layers. Both mean the single reinforced plate at +3,06; they differ only over whether the wall zone is counted into its outline, and the section settles that by giving the zone to the wall. The bearing rectangle is therefore the plate, which is also the polygon STAGE WEB-PIVOT-02 proved and STAGE WEB-PIVOT-05A section 2 forbids regressing. The genuine layer distinction is elsewhere: the walkable floor is the plate less what stands on it.",
+      "structural": {
+        "id": "slab_upper_floor",
+        "kind": "STRUCTURAL_SLAB",
+        "footprint": { "minX": 0.45, "maxX": 7.45, "minZ": 0.45, "maxZ": 12.15 },
+        "topM": 3.06,
+        "thicknessM": 0.33,
+        "bottomM": 2.73,
+        "voids": ["stair_main"],
+        "status": "SOURCE_DERIVED",
+        "source": "The bearing rectangle: the main body's 7.90 x 12.60 outline inset by the section's 0.45 m wall. Top and thickness from the section at +3,06 (py 420..444). The void is STAGE WEB-PIVOT-04's stair polygon, which the section independently finds at X 5.351..7.441."
+      },
+      "finish": {
+        "id": "floor_finish_upper",
+        "kind": "FLOOR_FINISH",
+        "footprint": { "minX": 0.45, "maxX": 7.45, "minZ": 0.45, "maxZ": 12.15 },
+        "topM": 3.06,
+        "voids": ["stair_main"],
+        "standingOn": ["chimney_salon", "chimney_boiler"],
+        "emitsGeometry": false,
+        "status": "SOURCE_DERIVED",
+        "source": "The attic walls' inner faces, which stand on the same footprint as the ground walls, less the stair void and less the two chimney blocks the attic plan draws standing on the floor. It is a plan region and not a body: the finish lies inside the plate's own 0.33 m, so emitting it as geometry would be the double-count this reconciliation exists to remove."
+      },
+      "supportedEdges": {
+        "relation": "All four edges of the plate are coincident with a load-bearing external wall's inner face over their whole length, so no part of the plate is unsupported and none of it stands over air.",
+        "bearingDepthM": null,
+        "bearingStatus": "UNRESOLVED",
+        "bearingNote": "How far the plate bears into the 0.45 m wall is drawn on no published section: the wall is one solid fill and carries no leaf line. The model butts the plate to the inner face and does not cut the wall, which keeps the STAGE WEB-PIVOT-02 shell exactly as proved. A bearing would move material out of the wall and into the plate and change neither total."
+      }
+    }
+  },
+
+  "roof": {
+    "hostRoofId": "roof_main_gable",
+    "planes": [
+      {
+        "planeId": "roof_main_gable:slope_minus",
+        "faces": "WEST",
+        "eaveAtPlanX": 0.0,
+        "ridgeAtPlanX": 3.95,
+        "note": "The plane whose eave lies at the cross-axis minimum. 'WEST' is a reader's label only; nothing in the model reads it, and the local frame is built from the plane's own corners."
+      },
+      {
+        "planeId": "roof_main_gable:slope_plus",
+        "faces": "EAST",
+        "eaveAtPlanX": 7.9,
+        "ridgeAtPlanX": 3.95
+      }
+    ],
+    "localFrame": "u runs along the eave from the plane's z-minimum corner; v runs up the slope from the eave. The plane is 12.60 m along u and 5.156 m along v, which is the 3.95 m half-span divided by cos(40 degrees). Both numbers are consequences of the roof's levels and footprint and are measured off the compiled planes, never written here."
+  },
+
+  "rooflights": {
+    "countEvidence": {
+      "atticPlanCallouts": 3,
+      "atticPlanNote": "Exactly three 78/118 callouts, and no others: two against the west wall at z 5.610..6.405 and z 7.777..8.556, one against the east wall at z 7.783..8.551. The other callouts on that plan are 234/303 twice (the rear gable pair), 270/320 (the front gable glazing) and the 140/220 pair section 20 of the STAGE WEB-PIVOT-05 report leaves unresolved.",
+      "westElevationGlazedPatches": 2,
+      "eastElevationGlazedPatches": 1,
+      "elevationNote": "A scan of the roof band (y 4.7..7.9) for sky-reflecting pixels finds exactly two patches on the west slope, at z 5.689..6.267 and 7.896..8.474, and exactly one on the east, at z 7.878..8.456. Their centres are 5.978, 8.185 and 8.167 against the plan's 6.008, 8.167 and 8.167. Three, counted twice, from two independent kinds of drawing.",
+      "verdict": "THREE",
+      "status": "SOURCE_CORROBORATED"
+    },
+    "unitSize": {
+      "widthM": 0.78,
+      "slopeLengthM": 1.18,
+      "printed": "78/118",
+      "status": "SOURCE_EXACT",
+      "source": "The callout printed in the circle beside each of the three units on asset_8460d17163a4. 78 is the width across the slope and 118 the length up it, which is the catalogue way a roof window is named."
+    },
+    "lowerEdge": {
+      "planOffsetFromEaveM": 0.45,
+      "status": "SOURCE_CORROBORATED",
+      "source": "Each unit's dashed plan symbol begins at the external wall's inner face: px 64..65 on the west pair and px 328 on the east one, which is x 0.450 and x 7.450, the two inner faces. The west elevation agrees: the frame's lower edge measures y 4.81..5.03 through the unit's centre column against the 5.013 that the roof's top surface reaches at plan x 0.45.",
+      "note": "The dashed plan symbol is a 0.78 x 0.78 square, not the unit's true plan projection — it measures 0.795 across and 0.795 up on the west pair and 0.768 by 0.827 on the east one. It carries the position, not the run up the slope; the run is the printed 118."
+    },
+    "units": [
+      {
+        "id": "rl_pralnia_w",
+        "planeId": "roof_main_gable:slope_minus",
+        "roomBelow": "u_pralnia",
+        "centreAlongRidgeM": 6.008,
+        "planSpanZ": [5.61, 6.405],
+        "orientation": "The unit's width runs along the ridge; its 1.18 m length runs up the slope from the eave.",
+        "status": "SOURCE_DERIVED",
+        "source": "asset_8460d17163a4, dashed symbol at py 407..437 = z 5.610..6.405, centre 6.008. Corroborated on asset_3915ee416ac4, where the glazed patch centres at z 5.978 (0.030 m away).",
+        "kind": "ROOFLIGHT"
+      },
+      {
+        "id": "rl_lazienka_w",
+        "planeId": "roof_main_gable:slope_minus",
+        "roomBelow": "u_bathroom",
+        "centreAlongRidgeM": 8.167,
+        "planSpanZ": [7.777, 8.556],
+        "orientation": "The unit's width runs along the ridge; its 1.18 m length runs up the slope from the eave.",
+        "status": "SOURCE_DERIVED",
+        "source": "asset_8460d17163a4, dashed symbol at py 488.8..518.2 = z 7.777..8.556, centre 8.167. Corroborated on asset_3915ee416ac4, where the glazed patch centres at z 8.185 (0.018 m away).",
+        "kind": "ROOFLIGHT"
+      },
+      {
+        "id": "rl_schody_e",
+        "planeId": "roof_main_gable:slope_plus",
+        "roomBelow": "u_stairs",
+        "centreAlongRidgeM": 8.167,
+        "planSpanZ": [7.783, 8.551],
+        "orientation": "The unit's width runs along the ridge; its 1.18 m length runs up the slope from the eave.",
+        "status": "SOURCE_DERIVED",
+        "source": "asset_8460d17163a4, dashed symbol at py 489..518 = z 7.783..8.551, centre 8.167. Corroborated on asset_fcb1602240db, where the glazed patch centres at z 8.167 and spans px 515..549 against the 509..555 the plan position predicts.",
+        "kind": "ROOFLIGHT"
+      }
+    ],
+    "fill": {
+      "frameWidthM": 0.07,
+      "status": "VISUAL_DERIVED",
+      "source": "asset_3915ee416ac4: the glazed area of a unit measures about 0.65 m across a 0.78 m frame and about 1.04 m up a 1.18 m one, which is 0.065 and 0.070 m of frame per side.",
+      "note": "The frame fills the cut through the roof's whole depth and the pane sits at mid-depth. Neither is roof fabric."
+    },
+    "cutToleranceM": 0.0,
+    "cutToleranceStatus": "ASSUMPTION",
+    "cutToleranceNote": "No source dimensions the clearance between the structural opening and the unit, so the minimal penetration is modelled: the cut is exactly the unit."
+  },
+
+  "chimneys": {
+    "countEvidence": {
+      "eastElevationStacks": 2,
+      "frontElevationStacks": 1,
+      "rearElevationStacks": 1,
+      "atticPlanBlocks": 2,
+      "note": "The east elevation shows two stacks, at z 8.931..9.508 and z 4.415..5.043. The front and rear elevations each show one silhouette, because both stacks occupy the same band of x and overlap exactly in those two views — front x 5.342..6.050, rear x 5.415..6.130. The attic plan draws a solid block at each of the two z positions, at the same x. Two stacks, found on three kinds of drawing.",
+      "verdict": "TWO",
+      "status": "SOURCE_CORROBORATED"
+    },
+    "topM": 7.88,
+    "topStatus": "VISUAL_DERIVED",
+    "topSource": "The front elevation puts the cap at y 7.883 and the rear at 7.882, and the same two views measure the ridge at 7.951 and 7.950 against the printed +7,95. The stacks therefore finish about 0.07 m below the ridge. The east elevation cannot better this: there the cap falls inside the ridge-tile band, which spans y 7.80..7.99.",
+    "baseM": 3.06,
+    "baseStatus": "SOURCE_DERIVED",
+    "baseNote": "The attic floor, where the attic plan draws both blocks standing. The shaft below this level is drawn on the ground plan and is NOT modelled here — see observedButNotModelled.",
+    "stacks": [
+      {
+        "id": "chimney_salon",
+        "kind": "CHIMNEY",
+        "serves": "The salon fireplace.",
+        "footprint": { "minX": 5.5, "maxX": 6.11, "minZ": 4.42, "maxZ": 5.03 },
+        "status": "SOURCE_CORROBORATED",
+        "source": "STAGE WEB-PIVOT-04 already read this block off the attic plan as the interior wall `uw_chimney` (X at 4.725, x 5.50..6.11, 0.61 thick), and notched `u_garderoba_ne` around it. Re-measured independently on the same plan for this stage at x 5.484..6.093, z 4.417..5.027 — a 0.61 x 0.61 block, agreeing to 0.017 m, which is under one pixel. The STAGE WEB-PIVOT-04 numbers are kept so the two layers stay exactly consistent.",
+        "corroboration": "The ground plan carries the flue block beside the fireplace at x 5.39..5.97, z 4.51..4.99 (STAGE WEB-PIVOT-04 observedButNotModelled). The east elevation puts the stack at z 4.415..5.043.",
+        "penetratesRoofIds": ["roof_main_gable"],
+        "hostPlaneId": "roof_main_gable:slope_plus"
+      },
+      {
+        "id": "chimney_boiler",
+        "kind": "CHIMNEY",
+        "serves": "The kotłownia.",
+        "footprint": { "minX": 5.484, "maxX": 6.0, "minZ": 8.9, "maxZ": 9.452 },
+        "status": "SOURCE_DERIVED",
+        "source": "asset_8460d17163a4: solid ink in columns px 254..273 and rows px 531..551, which is x 5.484..6.000 and z 8.900..9.452. The block's north edge is taken as the south face of `uw_corridor_south` (z 8.90), because the plan's ink runs the two together; its ink continues to py 551 with py 552 the boundary line.",
+        "corroboration": "The east elevation puts the stack at z 8.931..9.508, a 0.577 m width against the plan's 0.552. The ground plan carries the kotłownia's four-flue block below it.",
+        "penetratesRoofIds": ["roof_main_gable"],
+        "hostPlaneId": "roof_main_gable:slope_plus"
+      }
+    ],
+    "cutToleranceM": 0.0,
+    "cutToleranceStatus": "ASSUMPTION",
+    "cutToleranceNote": "Section 11 of the stage brief: flashing and clearance are source-undefined, so the roof is cut to the stack's own rectangle and no wider. The stack's faces and the cut's reveals are then coincident — no shared volume, and no gap."
+  },
+
+  "observedButNotModelled": [
+    "The chimney caps. Both stacks are rendered with a thin darker band at the top that oversails the shaft by about 0.03 m per side; no plan or section dimensions it.",
+    "The chimney shafts below the attic floor. The ground plan draws the salon flue at x 5.39..5.97, z 4.51..4.99 and a four-flue block in the kotłownia's north-east corner at x 6.724..7.452, z 9.059..9.589. Carrying either down would mean cutting STAGE WEB-PIVOT-04's interior walls and the upper slab, which section 2 of this stage's brief puts out of bounds.",
+    "Flashings, soakers and the trays where the stacks meet the roof, none of which any published drawing shows.",
+    "The 0.116 m grey band the attic plan draws inside the west wall, which reads as a knee-wall lining and is not dimensioned.",
+    "Small ventilation terminals: none is drawn on any published elevation of this project, and the four-flue block on the ground plan is the only place a second set of ducts appears."
+  ],
+
+  "unresolved": [
+    "The kotłownia flue's route. The ground plan's four-flue block sits against the east wall at x 6.724..7.452 while the attic block and all three elevations put the stack at x 5.48..6.13, so the shaft either offsets by about 1.2 m between the storeys or the ground block is a separate ventilation stack. Nothing published settles which, and neither reading changes the roof penetration, which all three elevations agree on.",
+    "The west face of `chimney_boiler`. The attic plan puts both blocks in the same column of pixels, which this stage reads as x 5.484 and which STAGE WEB-PIVOT-04 read as x 5.50 for the salon stack. The 0.016 m between them is under one pixel and is left standing rather than reconciled by fiat.",
+    "How far the upper floor plate bears into the 0.45 m external wall. The section draws the wall as one solid with no leaf line, so the bearing is not drawn and the plate is butted to the inner face.",
+    "The clearance cut around a roof window and around a chimney, neither of which is dimensioned; both are modelled as zero.",
+    "Whether the stacks really finish below the ridge. Two elevations agree on 7.88 against a ridge of 7.95, which is 0.07 m — inside the accuracy a render measurement can claim, so the reading is carried as measured and not rounded up to the ridge."
+  ]
+}

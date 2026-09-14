@@ -481,10 +481,26 @@ export type MarcowkiScene = {
  *   - **The facade's returns are compiled against the cut walls**, so an
  *     opening's host wall is the same object both layers see.
  */
+/**
+ * What a later stage may add to this scene without rewriting it.
+ *
+ * STAGE WEB-PIVOT-05A needs roof openings, chimney masses and one interior
+ * element replaced by a mass, and none of that belongs in a stage that is
+ * finished and proved. Two transforms, applied to the specs before anything is
+ * compiled, keep the join in the later stage's own file: pass neither and the
+ * scene is byte-for-byte the one STAGE WEB-PIVOT-05 measured.
+ */
+export type MarcowkiSceneExtension = {
+  building?: (spec: BuildingSpec) => BuildingSpec
+  interior?: (spec: InteriorSpec) => InteriorSpec
+}
+
 export function marcowkiFacadeScene(
-  opts: MarcowkiFacadeOptions & { interior?: MarcowkiInteriorOptions } = {},
+  opts: MarcowkiFacadeOptions & { interior?: MarcowkiInteriorOptions; extend?: MarcowkiSceneExtension } = {},
 ): MarcowkiScene {
-  const buildingSpec = marcowkiFacadeBuildingSpec(opts)
+  const buildingSpec = opts.extend?.building
+    ? opts.extend.building(marcowkiFacadeBuildingSpec(opts))
+    : marcowkiFacadeBuildingSpec(opts)
   const shellSlab = buildingSpec.slabs.find((s) => s.id === IDS.slab)
   const withoutSlab: BuildingSpec = {
     ...buildingSpec,
@@ -513,7 +529,8 @@ export function marcowkiFacadeScene(
               : s,
           ),
         }
-  const interior = compileInterior(interiorSpec)
+  const finalInterior = opts.extend?.interior ? opts.extend.interior(interiorSpec) : interiorSpec
+  const interior = compileInterior(finalInterior)
 
   const facadeSpec = marcowkiFacadeSpec(opts)
   const facade = compileFacade(facadeSpec, new Map(withoutSlab.walls.map((w) => [w.id, w])))
@@ -565,7 +582,7 @@ export function marcowkiFacadeScene(
     building,
     interior,
     facade,
-    spec: { building: withoutSlab, interior: interiorSpec, facade: facadeSpec },
+    spec: { building: withoutSlab, interior: finalInterior, facade: facadeSpec },
     tris,
     diagnostics: [
       ...building.diagnostics.map((d) => ({ layer: 'SHELL' as const, severity: d.severity, code: d.code, message: d.message })),
