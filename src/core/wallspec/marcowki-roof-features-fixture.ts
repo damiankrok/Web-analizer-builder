@@ -151,7 +151,14 @@ export function rooflightOpenings(
         status: u.status as SpecStatus,
       })
     }
-    fills.push({ id: `${u.id}_fill`, openingId: u.id, frameWidthM: g.fill.frameWidthM })
+    // When the cut is suppressed the fill is left out here too, or the compiler
+    // would rightly refuse it as naming an opening that was never cut. The
+    // `fillWithoutCut` mutation puts the unit back afterwards, in
+    // `marcowkiGoldScene`, which is the only way to get glass onto an intact
+    // roof without teaching the compiler to do something it should not do.
+    if (opts.fillWithoutCut !== u.id) {
+      fills.push({ id: `${u.id}_fill`, openingId: u.id, frameWidthM: g.fill.frameWidthM })
+    }
   }
   return { openings, fills }
 }
@@ -312,5 +319,18 @@ export const roofFeatureExtension = (opts: MarcowkiRoofFeatureOptions = {}): Mar
 
 /** The complete gold building: the STAGE WEB-PIVOT-05 scene with the roof finished. */
 export function marcowkiGoldScene(opts: MarcowkiGoldOptions = {}): MarcowkiScene {
-  return marcowkiFacadeScene({ ...opts, extend: roofFeatureExtension(opts) })
+  const scene = marcowkiFacadeScene({ ...opts, extend: roofFeatureExtension(opts) })
+  if (opts.fillWithoutCut === undefined) return scene
+  // Glass laid on an intact roof: the fabric from the scene that never cut the
+  // hole, and the unit from the scene that did. Splicing two compiles is the
+  // honest way to build this defect — the alternative is a "declare but do not
+  // cut" flag in the roof compiler, which would put a mutation affordance in
+  // generic code and make the compiler able to produce the very thing §8
+  // forbids.
+  const { fillWithoutCut: _suppressed, ...rest } = opts
+  const whole = marcowkiFacadeScene({ ...rest, extend: roofFeatureExtension(rest) })
+  const unit = whole.tris.filter(
+    (t) => t.openingId === opts.fillWithoutCut && (t.part === 'ROOF_FRAME' || t.part === 'ROOF_GLAZING'),
+  )
+  return { ...scene, tris: [...scene.tris, ...unit] }
 }

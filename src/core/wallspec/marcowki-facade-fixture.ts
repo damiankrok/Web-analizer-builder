@@ -460,6 +460,20 @@ export type MarcowkiScene = {
 }
 
 /**
+ * What a later stage may add to this scene without rewriting it.
+ *
+ * STAGE WEB-PIVOT-05A needs roof openings, chimney masses and one interior
+ * element replaced by a mass, and none of that belongs in a stage that is
+ * finished and proved. Two transforms, applied to the specs before anything is
+ * compiled, keep the join in the later stage's own file: pass neither and the
+ * scene is byte-for-byte the one STAGE WEB-PIVOT-05 measured.
+ */
+export type MarcowkiSceneExtension = {
+  building?: (spec: BuildingSpec) => BuildingSpec
+  interior?: (spec: InteriorSpec) => InteriorSpec
+}
+
+/**
  * Compile the shell, the interior and the facade into one model.
  *
  * Three joins matter and all three are made here rather than inside a compiler:
@@ -481,20 +495,6 @@ export type MarcowkiScene = {
  *   - **The facade's returns are compiled against the cut walls**, so an
  *     opening's host wall is the same object both layers see.
  */
-/**
- * What a later stage may add to this scene without rewriting it.
- *
- * STAGE WEB-PIVOT-05A needs roof openings, chimney masses and one interior
- * element replaced by a mass, and none of that belongs in a stage that is
- * finished and proved. Two transforms, applied to the specs before anything is
- * compiled, keep the join in the later stage's own file: pass neither and the
- * scene is byte-for-byte the one STAGE WEB-PIVOT-05 measured.
- */
-export type MarcowkiSceneExtension = {
-  building?: (spec: BuildingSpec) => BuildingSpec
-  interior?: (spec: InteriorSpec) => InteriorSpec
-}
-
 export function marcowkiFacadeScene(
   opts: MarcowkiFacadeOptions & { interior?: MarcowkiInteriorOptions; extend?: MarcowkiSceneExtension } = {},
 ): MarcowkiScene {

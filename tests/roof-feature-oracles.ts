@@ -104,12 +104,19 @@ export function roofOpeningCutReport(
   samples = 5,
 ): RoofOpeningCutReport {
   const fabric = roofFabric(tris)
+  // Probed vertically inside the opening's own plan footprint, for the same
+  // reason the stray probe below is: the hole is a vertical cut, so a ray along
+  // the plane normal leaves it through the side before it reaches the underside
+  // and reports the roof it then meets as material left in the hole. A vertical
+  // line either passes clean through the void or it does not, whatever the
+  // pitch.
+  const planRect = openingPlanRect(f, rect)
   let throughM = 0
   for (let i = 1; i <= samples; i++) {
     for (let j = 1; j <= samples; j++) {
-      const u = rect.u0 + ((rect.u1 - rect.u0) * i) / (samples + 1)
-      const v = rect.v0 + ((rect.v1 - rect.v0) * j) / (samples + 1)
-      throughM += depthThroughPlane(fabric, f, u, v)
+      const x = planRect.minX + ((planRect.maxX - planRect.minX) * i) / (samples + 1)
+      const z = planRect.minZ + ((planRect.maxZ - planRect.minZ) * j) / (samples + 1)
+      throughM += runLength(materialRuns(fabric, { x, y: -40, z }, { x: 0, y: 1, z: 0 }, 1e-7))
     }
   }
   const outside: Array<[number, number]> = []
@@ -125,19 +132,31 @@ export function roofOpeningCutReport(
   const reveals = openingTris(tris, openingId, 'ROOF_REVEAL')
   const fills = asO(tris.filter((t) => t.openingId === openingId && (t.part === 'ROOF_FRAME' || t.part === 'ROOF_GLAZING')))
   const fillM = depthThroughPlane(fills, f, rect.u0 + (rect.u1 - rect.u0) * 0.06, midV)
-  // Fill outside the opening's own rectangle, sampled on a ring further out
-  // than any tolerance this stage allows.
+  // Fill outside the opening, asked the way the hole is actually defined.
+  //
+  // The hole is a *vertical* cut through a sloped plane, so the thing that
+  // bounds it in plan is a vertical prism, and the fill in it is one too. Probe
+  // that with a ray along the plane normal and the answer is wrong by
+  // construction: a vertical extrusion of depth `d` on a plane of pitch θ
+  // projects perpendicularly to a rectangle `d · sin θ` longer down-slope than
+  // the patch it came from — 0.177 m here — so a ring 0.12 m out lands inside
+  // the fill's own perpendicular shadow and reports stray material that is not
+  // there. Firing vertically at plan positions outside the opening's plan
+  // footprint asks about the prism instead of about its shadow, and agrees with
+  // the convention `emitPlane` uses to find its reveals.
+  const planPad = 0.12
+  const planBox = openingPlanRect(f, rect)
   let strayFillM = 0
   for (let k = 0; k < samples; k++) {
-    const tu = rect.u0 + ((rect.u1 - rect.u0) * (k + 0.5)) / samples
-    const tv = rect.v0 + ((rect.v1 - rect.v0) * (k + 0.5)) / samples
-    for (const [u, v] of [
-      [tu, rect.v0 - pad],
-      [tu, rect.v1 + pad],
-      [rect.u0 - pad, tv],
-      [rect.u1 + pad, tv],
+    const tx = planBox.minX + ((planBox.maxX - planBox.minX) * (k + 0.5)) / samples
+    const tz = planBox.minZ + ((planBox.maxZ - planBox.minZ) * (k + 0.5)) / samples
+    for (const [x, z] of [
+      [tx, planBox.minZ - planPad],
+      [tx, planBox.maxZ + planPad],
+      [planBox.minX - planPad, tz],
+      [planBox.maxX + planPad, tz],
     ] as Array<[number, number]>) {
-      strayFillM += depthThroughPlane(fills, f, u, v)
+      strayFillM += runLength(materialRuns(fills, { x, y: -40, z }, { x: 0, y: 1, z: 0 }, 1e-7))
     }
   }
   return {
@@ -255,22 +274,40 @@ export function chimneyPenetrationReport(
  * own wall and then through air until it meets roof. With the minimal
  * penetration §11 asks for, that air is nothing.
  */
+/**
+ * The annular gap between a stack and the hole it passes through, in plan.
+ *
+ * Measured on a vertical line, not a horizontal one, and that is the whole of
+ * it. A horizontal ray at some chosen height either misses the roof entirely —
+ * the roof is above it at that `x` — or crosses it far from the penetration, so
+ * the number it returns is about the slope's position, not about the gap. A
+ * chimney and its hole are both vertical prisms, so the gap between them is a
+ * plan-space quantity: step out from the stack's face in plan and ask how far
+ * you must go before a vertical line meets roof again.
+ *
+ * Returns 0 when the roof begins at the stack's own face — a hole cut exactly
+ * to the stack — and the gap in metres otherwise. `NaN` means no roof was found
+ * within `maxM`, which is a missing-roof fault rather than a clearance reading.
+ */
 export function chimneyClearanceM(
   tris: readonly SceneTri[],
-  massId: string,
+  _massId: string,
   footprint: { minX: number; maxX: number; minZ: number; maxZ: number },
-  atY: number,
-  dir: OVec,
+  side: 'minX' | 'maxX' | 'minZ' | 'maxZ',
+  maxM = 0.6,
+  stepM = 0.005,
 ): number {
   const fabric = roofFabric(tris)
-  const stack = elementTrisOf(tris, massId)
   const cx = (footprint.minX + footprint.maxX) / 2
   const cz = (footprint.minZ + footprint.maxZ) / 2
-  const origin = { x: cx, y: atY, z: cz }
-  const leaveStack = materialRuns(stack, origin, dir, 1e-7)
-  const meetRoof = rayHits(fabric, origin, dir)
-  if (leaveStack.length === 0 || meetRoof.length === 0) return Number.NaN
-  return meetRoof[0].t - leaveStack[leaveStack.length - 1].t1
+  const hitsRoof = (x: number, z: number): boolean =>
+    materialRuns(fabric, { x, y: -40, z }, { x: 0, y: 1, z: 0 }, 1e-7).length > 0
+  for (let d = 0; d <= maxM; d += stepM) {
+    const x = side === 'minX' ? footprint.minX - d : side === 'maxX' ? footprint.maxX + d : cx
+    const z = side === 'minZ' ? footprint.minZ - d : side === 'maxZ' ? footprint.maxZ + d : cz
+    if (hitsRoof(x, z)) return d
+  }
+  return Number.NaN
 }
 
 /** Which room polygon a point in plan falls in, if any. */
