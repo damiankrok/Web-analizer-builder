@@ -22,7 +22,9 @@ nothing in it was reset, discarded, cleaned, stashed or recreated.
 
 ## 2. Final implementation HEAD
 
-Recorded in §22 of this report after the final commit.
+`04c1671` — *STAGE WEB-PIVOT-05A: roof features, and the manual gold completed*,
+committed on top of the checkpoint. The HEAD that carries this line is the
+commit after it.
 
 ## 3. Branch
 
