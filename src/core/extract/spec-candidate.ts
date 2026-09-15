@@ -28,6 +28,7 @@
  */
 import type { DimensionObservation } from './dimension-observations.js'
 import type { PlanModel, WallRun, RoomRegion, RoomAdjacency, OpeningClass } from './plan-model.js'
+import type { CandidateShell } from './candidate-shell.js'
 
 /**
  * The frame a candidate's metres are in.
@@ -177,7 +178,13 @@ export type CandidateStorey = {
 }
 
 export type ArchitecturalSpecCandidate = {
-  schemaVersion: 'architectural-spec-candidate-1.0.0'
+  /**
+   * `1.0.0` is a reading of floor plans alone. `1.1.0` carries `shell` as well
+   * — the vertical structure, roof and facades STAGE WEB-PIVOT-07 adds. The
+   * version is what it is because of what is in the object, so a consumer
+   * never has to test a field for existence to know which it has.
+   */
+  schemaVersion: 'architectural-spec-candidate-1.0.0' | 'architectural-spec-candidate-1.1.0'
   kind: 'CANDIDATE'
   /**
    * Read this before using anything below. A candidate is a reading of a
@@ -192,6 +199,13 @@ export type ArchitecturalSpecCandidate = {
   frame: CandidateFrame | null
   storeys: CandidateStorey[]
   conflicts: CandidateConflict[]
+  /**
+   * What the section and the elevations add (§26). Null when the package
+   * publishes neither, or when only the floor-plan stage has run — which is
+   * not the same thing as a building with no roof, and the type says so by
+   * being nullable rather than empty.
+   */
+  shell: CandidateShell | null
   notes: string[]
 }
 
@@ -457,6 +471,7 @@ export function buildSpecCandidate(
     frame: sheetFrame,
     storeys,
     conflicts,
+    shell: null,
     notes,
   }
 }

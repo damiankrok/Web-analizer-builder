@@ -390,3 +390,30 @@ export function analyseSectionRoof(
   ]
   return { skyline, edges, ridge, eaves, soffits, notes }
 }
+
+/**
+ * How wide the mass the section cuts through is, at one row.
+ *
+ * Used to decide which of the plan's two axes the section's horizontal axis
+ * is: a section is a cut in one direction, the drawing does not say which, and
+ * comparing the width it measures against the two the plans measure does.
+ * Guessing from the file name would be exactly the kind of thing §7 forbids
+ * for elevations, and there is no reason to allow it here.
+ */
+export function sectionMassSpan(
+  gray: GrayImage,
+  inkThreshold: number,
+  row: number,
+): { fromPx: number; toPx: number; widthPx: number } | null {
+  const y = Math.round(row)
+  if (y < 0 || y >= gray.height) return null
+  let from = -1
+  let to = -1
+  for (let x = 0; x < gray.width; x++) {
+    if (gray.data[y * gray.width + x] > inkThreshold) continue
+    if (from < 0) from = x
+    to = x
+  }
+  if (from < 0 || to <= from) return null
+  return { fromPx: from, toPx: to, widthPx: to - from + 1 }
+}
