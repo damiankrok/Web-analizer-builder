@@ -16,8 +16,8 @@
  *     the quantity asked for (a depth, a shaft's route between storeys) is not
  *     one an orthographic drawing can answer.
  *
- * §22's last line and §23's Marcówki flue are both instances of the third, and
- * they are the cases this file exists to get right. A rooflight seen on one
+ * §22's last line and §23's unresolved lower shaft are both instances of the
+ * third, and they are the cases this file exists to get right. A rooflight seen on one
  * elevation and nowhere else is not a rooflight the pipeline is sure of; a
  * stack seen on the roof and a flue seen in a plan two storeys down are not
  * known to be one shaft, and joining them would assert a route no drawing
@@ -225,8 +225,8 @@ export type StackMatch = {
  * so that is all that is compared, and a match on one coordinate is recorded
  * as a match on one coordinate. Where the elevation shows a stack and no plan
  * void lines up under it, the result is `UNRESOLVED` rather than `CONFLICT`:
- * the plans may simply not cut through it, and §23 wants the Marcówki flue's
- * ambiguity preserved rather than forced into a continuous shaft.
+ * the plans may simply not cut through it, and §23 wants a flue's ambiguity
+ * preserved rather than forced into a continuous shaft.
  */
 export function matchStacks(
   stacks: readonly StackObservation[],
@@ -383,8 +383,8 @@ export function recessesFromPlan(
    * from the building simply being narrower there — an L-shaped plan reads as a
    * four-metre recess, which on project A is exactly what happened. What makes
    * a recess a recess is that it has *returns*: walls running back from the
-   * facade plane to the set-back wall at each of its ends. The gold fixture
-   * models them under that name for the same reason.
+   * facade plane to the set-back wall at each of its ends. A drafter would
+   * call them returns, and they are what a recess has and a step does not.
    */
   const hasReturn = (
     perpendicular: CandidateStorey['walls'],
@@ -407,11 +407,25 @@ export function recessesFromPlan(
   for (const s of storeys) {
     const parallel = s.walls.filter((w) => w.axis === wallAxis)
     if (parallel.length === 0) continue
-    // A storey that does not reach this facade cannot have a recess in it.
-    // Project A's attic stops where the garage wing begins, four metres behind
-    // the ground floor's east face; calling that a four-metre recess confuses
-    // a storey being smaller than the one under it with a hole in a wall.
-    const reach = parallel.map((w) => (inward > 0 ? Math.min(w.nearM, w.farM) : Math.max(w.nearM, w.farM)))
+    // A storey that does not reach this facade cannot have a recess in it: an
+    // upper storey that stops short of a wing below it is a storey being
+    // smaller than the one under it, not a hole in a wall.
+    //
+    // Reach is measured over *every* wall of the storey, not only the ones
+    // parallel to the facade. A recess's own returns run perpendicular to it
+    // and are exactly the walls that touch the facade plane, so a test that
+    // looked only at parallel walls would decide that a storey consisting of a
+    // set-back wall and two returns does not reach the facade its returns
+    // start at.
+    const reach = s.walls.map((w) =>
+      w.axis === wallAxis
+        ? inward > 0
+          ? Math.min(w.nearM, w.farM)
+          : Math.max(w.nearM, w.farM)
+        : inward > 0
+          ? Math.min(w.fromM, w.toM)
+          : Math.max(w.fromM, w.toM),
+    )
     const closest = inward > 0 ? Math.min(...reach) : Math.max(...reach)
     if (inward * (closest - facadePlaneM) > opts.minRecessDepthM) continue
     for (const wall of parallel) {

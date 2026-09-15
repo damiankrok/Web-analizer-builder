@@ -110,6 +110,22 @@ import type {
 import type { ArchitecturalSpecCandidate } from '../core/extract/spec-candidate.js'
 import { TesseractEngine } from './ocr/tesseract.js'
 
+/**
+ * The two tunables that belong to the runner rather than to any one module.
+ * They are exported so `shellConfig()` can hash them with the rest (§33).
+ */
+export const DEFAULT_SHELL_RUNNER = {
+  // A registration good to half a percent over a twelve-metre facade is six
+  // centimetres out at the far end, and a plan opening is placed to a pixel of
+  // a 37.8 px/m drawing. Thirty-five centimetres is generous against both and
+  // still far below the gap between two real openings.
+  openingMatchToleranceM: 0.35,
+  // How far one elevation's own scale may sit from the set's before the set's
+  // is adopted. Four percent is well outside what two readings of one render
+  // differ by and well inside a silhouette that has lost a gable.
+  setScaleDrift: 0.04,
+}
+
 export type ShellOptions = {
   engine: PlanTextEngine | null
   sectionAnnotations: typeof DEFAULT_SECTION_ANNOTATIONS
@@ -143,12 +159,8 @@ export const DEFAULT_SHELL: ShellOptions = {
   facadeExtraction: DEFAULT_FACADE_EXTRACTION,
   shellFeatures: DEFAULT_SHELL_FEATURES,
   topology: DEFAULT_TOPOLOGY_OPTIONS,
-  // A registration good to half a percent over a twelve-metre facade is six
-  // centimetres out at the far end, and a plan opening is placed to a pixel of
-  // a 37.8 px/m drawing. Thirty-five centimetres is generous against both and
-  // still far below the gap between two real openings.
-  openingMatchToleranceM: 0.35,
-  setScaleDrift: 0.04,
+  openingMatchToleranceM: DEFAULT_SHELL_RUNNER.openingMatchToleranceM,
+  setScaleDrift: DEFAULT_SHELL_RUNNER.setScaleDrift,
 }
 
 export type ShellTimings = {

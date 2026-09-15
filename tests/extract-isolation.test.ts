@@ -22,7 +22,7 @@ import { inkChannel } from '../src/core/extract/raster-normalize.js'
 
 /** Every file the automatic extraction is made of. */
 const EXTRACTION_ROOTS = ['src/core/extract', 'src/node/ocr']
-const EXTRACTION_FILES = ['src/node/extract-runner.ts']
+const EXTRACTION_FILES = ['src/node/extract-runner.ts', 'src/node/shell-runner.ts']
 
 function walk(dir: string): string[] {
   const out: string[] = []
@@ -45,9 +45,26 @@ describe('§1 the extraction cannot read the answers', () => {
     expect(files.length).toBeGreaterThanOrEqual(8)
     expect(files.some((f) => f.includes('dimension-observations'))).toBe(true)
     expect(files.some((f) => f.includes('ocr/tesseract'))).toBe(true)
-    // The 06A modules are in the sweep by name, so a rename that moved one of
-    // them out of it would fail here rather than quietly stop being checked.
-    for (const name of ['door-symbols', 'room-topology', 'room-labels']) {
+    // The 06A and 07 modules are in the sweep by name, so a rename that moved
+    // one of them out of it would fail here rather than quietly stop being
+    // checked.
+    for (const name of [
+      'door-symbols',
+      'room-topology',
+      'room-labels',
+      'section-annotations',
+      'vertical-datums',
+      'section-roof',
+      'oblique-text',
+      'roof-model',
+      'elevation',
+      'facade-openings',
+      'opening-match',
+      'shell-features',
+      'candidate-shell',
+      'source-tolerance',
+      'shell-runner',
+    ]) {
       expect(files.some((f) => f.includes(name)), `${name} is not in the sweep`).toBe(true)
     }
   })
@@ -89,6 +106,11 @@ describe('§1 the extraction cannot read the answers', () => {
       'm87928f6e82dd1',
       'm2fa281446a8ca',
       'asset_8fda78f8654c',
+      // Stage 07's own projects and the assets it reads.
+      'kostrzewach',
+      'm215297bb5224c',
+      'asset_b1e8c064c1ba',
+      'asset_3c991e46a7e7',
     ]
     for (const file of extractionSources()) {
       const source = readFileSync(file, 'utf8').toLowerCase()
@@ -117,10 +139,21 @@ describe('§1 the extraction cannot read the answers', () => {
     // detector, the topology and the label reader are given a raster, a scale
     // and the pipeline's own configuration, and there is nowhere in any of
     // their signatures for an answer to be passed in.
-    for (const name of ['door-symbols', 'room-topology', 'room-labels']) {
+    for (const name of [
+      'door-symbols',
+      'room-topology',
+      'room-labels',
+      'vertical-datums',
+      'section-roof',
+      'roof-model',
+      'elevation',
+      'facade-openings',
+      'opening-match',
+      'shell-features',
+    ]) {
       const file = extractionSources().find((f) => f.includes(name))!
       const source = readFileSync(file, 'utf8')
-      expect(source, name).not.toMatch(/\bGold\b|goldWall|goldRoom|goldOpening|evaluate/i)
+      expect(source, name).not.toMatch(/\bGold\b|goldWall|goldRoom|goldOpening|goldLevel|goldRidge|evaluate/i)
       expect(source, name).not.toMatch(/notionalEdge|positionTolerance|majorWall/)
     }
   })
