@@ -1,6 +1,6 @@
 /** The development projects, and the one untouched holdout among them. */
 export type DevProject = {
-  key: 'A' | 'B' | 'C' | 'D' | 'E'
+  key: 'A' | 'B' | 'C' | 'D' | 'E' | 'F'
   slug: string
   name: string
   url: string
@@ -20,6 +20,7 @@ export type DevProject = {
     | 'HOLDOUT'
     | 'HISTORICAL_HOLDOUT_WEB01'
     | 'HISTORICAL_HOLDOUT_WEB02'
+    | 'HISTORICAL_HOLDOUT_WEB06'
   description: string
 }
 
@@ -66,12 +67,24 @@ export const PROJECTS: readonly DevProject[] = [
     slug: 'E-holdout',
     name: 'Dom w wisteriach 21',
     url: 'https://www.archon.pl/projekty-domow/projekt-dom-w-wisteriach-21-m42a2875282921',
+    role: 'HISTORICAL_HOLDOUT_WEB06',
+    description:
+      'The WEB-PIVOT-06 holdout, run once under that freeze. Its walls, openings, rooms, ' +
+      'adjacencies and thicknesses were reported per storey, so its extracted geometry has been ' +
+      'looked at and it is spent. Kept as a fourth regression project.',
+  },
+  {
+    key: 'F',
+    slug: 'F-holdout',
+    name: 'Dom w malin\u00f3wkach 58 (E)',
+    url: 'https://www.archon.pl/projekty-domow/projekt-dom-w-malinowkach-58-e-m87928f6e82dd1',
     role: 'HOLDOUT',
     description:
-      'The WEB-PIVOT-06 holdout, chosen before any Stage-06 implementation or tuning. Selected on ' +
-      'the presence of technical drawings alone: the page publishes a ground-floor plan, an attic ' +
-      'plan, a detailed (dimensioned) plan variant, elevations and a section. None of its metric ' +
-      'values have been inspected and none of its geometry has been transcribed.',
+      'The WEB-PIVOT-06A holdout, chosen before any doorway or topology code was written. ' +
+      'Selected on the presence of the drawing roles Stage 06A consumes and on nothing else: ' +
+      'dimensioned and area-labelled plans for both storeys, a section and four elevations. No ' +
+      'plan image has been decoded for inspection, no printed dimension read, and no wall, room, ' +
+      'door or opening value transcribed.',
   },
 ]
 

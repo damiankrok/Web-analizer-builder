@@ -78,7 +78,10 @@ describe('§1 the extraction cannot read the answers', () => {
       'kosaccach',
       'kruszczykach',
       'wisteriach',
+      'malinowkach',
+      'malinówkach',
       'A-marcowki',
+      'm87928f6e82dd1',
       'm2fa281446a8ca',
       'asset_8fda78f8654c',
     ]

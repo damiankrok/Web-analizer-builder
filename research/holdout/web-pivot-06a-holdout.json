@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "web-pivot-06a-holdout-1.0.0",
+  "stage": "STAGE_WEB_PIVOT_06A_DOORWAY_ROOM_TOPOLOGY",
+  "declaredAtCommit": "9b78e438b498f1b1889fe1267df42f876173c3f3",
+  "declaredBefore": "any 06A doorway, arc, leaf, host-wall or room-topology code was written",
+  "holdout": {
+    "key": "F",
+    "slug": "F-holdout",
+    "name": "Dom w malinówkach 58 (E)",
+    "projectId": "m87928f6e82dd1",
+    "canonicalUrl": "https://www.archon.pl/projekty-domow/projekt-dom-w-malinowkach-58-e-m87928f6e82dd1",
+    "sourcePackageId": "pkg_e75b59f95fe1f161",
+    "sourcePackageSchemaVersion": "3.0.0",
+    "sourcePackageHash": "e75b59f95fe1f161a72f2eb56f145b5608c33b8daa788c09c4c0b22bcaa26d18",
+    "documentHash": "c329df882fc316b0fe7ee557a29bae34a33ac2076645e2577b20ffa1385082ec"
+  },
+  "selectionBasis": {
+    "criterion": "presence of the drawing roles Stage 06A consumes, and nothing else",
+    "observed": [
+      "FLOOR_PLAN / GROUND / DIMENSIONED",
+      "FLOOR_PLAN / UPPER_ATTIC / DIMENSIONED",
+      "FLOOR_PLAN / GROUND / AREA_LABELS",
+      "FLOOR_PLAN / UPPER_ATTIC / AREA_LABELS",
+      "SECTION / ALL / CLEAN",
+      "ELEVATION x 4"
+    ],
+    "notObserved": [
+      "no plan image was decoded for inspection, rendered or measured",
+      "no printed dimension was read",
+      "no wall, room, door, opening, stair or roof value was transcribed",
+      "no door symbol, swing arc, leaf or doorway width was looked at",
+      "no room count, adjacency or segmentation figure was looked at"
+    ],
+    "note": "the role table above is what the automatic role classifier reported when the SourcePackage was built; it names which drawings exist and nothing about what any of them contains"
+  },
+  "rules": {
+    "tuning": "FORBIDDEN — no threshold, weight, tolerance or heuristic may be chosen against F",
+    "runs": "exactly one Stage-06A extraction run, after the 06A code and config freeze",
+    "transcription": "FORBIDDEN — F gets no gold fixture",
+    "afterTheRun": "no tuning of any kind inside this stage once F has been run (§17)"
+  },
+  "supersedes": {
+    "E": {
+      "name": "Dom w wisteriach 21",
+      "reason": "spent as the WEB-PIVOT-06 holdout: run once under that freeze, and its walls, openings, rooms, adjacencies, owned dimensions and wall thicknesses were reported per storey",
+      "roleNow": "HISTORICAL_HOLDOUT_WEB06"
+    },
+    "D": {
+      "name": "Dom w kruszczykach 22",
+      "reason": "spent as the WEB-02 holdout",
+      "roleNow": "HISTORICAL_HOLDOUT_WEB02"
+    },
+    "C": {
+      "name": "Dom w kosaćcach 44",
+      "reason": "spent as the WEB-01 holdout",
+      "roleNow": "HISTORICAL_HOLDOUT_WEB01"
+    }
+  }
+}
