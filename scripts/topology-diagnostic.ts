@@ -11,7 +11,12 @@
  *              each separator in the colour of what put it there
  *   labels     the room labels the area-labelled copy prints, placed on this
  *              copy by the shift the two were aligned at
+ *   flood      the regions before any door was placed: the flood Stage 06
+ *              would have produced, for comparison
  *   rooms      the regions that came out, tinted, with the outside left white
+ *
+ * It also prints, per storey, every wall run with its material and its
+ * openings, every door and where it was hung, and the adjacency graph.
  *
  * Nothing here reads a gold file.
  */
@@ -22,6 +27,8 @@ import { loadSource } from '../src/node/source-loader.js'
 import { projectByKey } from '../src/node/projects.js'
 import { extractPlanSpec, DEFAULT_EXTRACTION, type PlanExtraction } from '../src/node/extract-runner.js'
 import { inkChannel } from '../src/core/extract/raster-normalize.js'
+import { buildPlanModel } from '../src/core/extract/plan-model.js'
+import { detectWallBands } from '../src/core/extract/wall-bands.js'
 import { selectPlanAsset, type PlanStorey } from '../src/core/dimensions/plan-select.js'
 import type { GrayImage } from '../src/core/contracts/raster.js'
 
@@ -157,10 +164,15 @@ for (const plan of result.plans as PlanExtraction[]) {
     writeFileSync(join(outDir, `labels-${plan.storey}.png`), PNG.sync.write(png))
   }
 
-  // --- the rooms
-  {
+  // --- the flood before any door was placed
+  const before = buildPlanModel(
+    gray,
+    detectWallBands(gray, plan.scales.find((x) => x.pxPerCm !== null)?.pxPerCm ?? null).bands,
+    plan.scales.find((x) => x.pxPerCm !== null)?.pxPerCm ?? null,
+  )
+  const tint = (m: typeof model, name: string): void => {
     const png = canvas(gray)
-    const kept = new Map(model.rooms.map((r, i) => [r.id, i]))
+    const kept = new Map(m.rooms.map((r, i) => [r.id, i]))
     const palette: RGB[] = [
       [255, 214, 214],
       [214, 235, 255],
@@ -173,28 +185,30 @@ for (const plan of result.plans as PlanExtraction[]) {
       [200, 255, 226],
       [255, 210, 240],
     ]
-    for (let i = 0; i < model.labels.length; i++) {
-      const id = model.labels[i]
+    for (let i = 0; i < m.labels.length; i++) {
+      const id = m.labels[i]
       if (id < 0) continue
       const idx = kept.get(`rg${id}`)
       if (idx === undefined) continue
       const c = palette[idx % palette.length]
-      const x = i % model.width
-      const y = (i - x) / model.width
+      const x = i % m.width
+      const y = (i - x) / m.width
       dot(png, x, y, c, 0)
     }
-    for (const s of model.separators) {
-      if (s.kind === 'FABRIC') continue
-      const c = CLASS_COLOUR[s.kind]
-      for (let a = Math.floor(s.fromPx); a <= Math.ceil(s.toPx); a++) {
-        for (let cc = Math.floor(s.atNearPx); cc <= Math.ceil(s.atFarPx); cc++) {
-          if (s.axis === 'X') dot(png, a, cc, c, 0)
+    for (const sep of m.separators) {
+      if (sep.kind === 'FABRIC') continue
+      const c = CLASS_COLOUR[sep.kind]
+      for (let a = Math.floor(sep.fromPx); a <= Math.ceil(sep.toPx); a++) {
+        for (let cc = Math.floor(sep.atNearPx); cc <= Math.ceil(sep.atFarPx); cc++) {
+          if (sep.axis === 'X') dot(png, a, cc, c, 0)
           else dot(png, cc, a, c, 0)
         }
       }
     }
-    writeFileSync(join(outDir, `rooms-${plan.storey}.png`), PNG.sync.write(png))
+    writeFileSync(join(outDir, `${name}-${plan.storey}.png`), PNG.sync.write(png))
   }
+  tint(before, 'flood')
+  tint(model, 'rooms')
 
   console.log(`\n=== ${project.key} ${plan.storey} (${plan.assetId})`)
   for (const n of plan.doors.notes) console.log(`  ${n}`)
@@ -212,6 +226,31 @@ for (const plan of result.plans as PlanExtraction[]) {
     )
   }
   console.log(
-    `  wrote doors-${plan.storey}.png, barrier-${plan.storey}.png, labels-${plan.storey}.png, rooms-${plan.storey}.png`,
+    `  before any door was placed: ${before.rooms.length} rooms, ${before.adjacency.length} adjacencies, ` +
+      `${before.runs.length} wall runs`,
+  )
+  console.log('  --- every wall run: its extent, its material, and what its openings are made of')
+  for (const run of [...model.runs].sort((a, b) => (a.axis === b.axis ? a.centrePx - b.centrePx : a.axis < b.axis ? -1 : 1))) {
+    const solid = run.solid.reduce((n, p) => n + (p.toPx - p.fromPx + 1), 0)
+    console.log(
+      `    ${run.id.padEnd(6)} ${run.axis} at ${run.centrePx.toFixed(1)} (${run.thicknessPx.toFixed(1)} px thick) ` +
+        `${run.fromPx.toFixed(0)}..${run.toPx.toFixed(0)}: ${solid} px of material, ` +
+        `${run.openings.length} opening${run.openings.length === 1 ? '' : 's'}` +
+        (run.openings.length === 0
+          ? ''
+          : ` — ${run.openings.map((o) => `${o.fromPx.toFixed(0)}..${o.toPx.toFixed(0)} ${o.class}`).join(', ')}`),
+    )
+  }
+  console.log('  --- the adjacency graph')
+  for (const a of model.adjacency) {
+    console.log(
+      `    ${a.a} -- ${a.b} over ${a.sharedPx} px of ${a.wallRunId}` +
+        `, ${a.openings.filter((o) => o.class === 'DOOR').length} door(s)` +
+        (a.unresolved ? '  UNRESOLVED: ' + a.why : ''),
+    )
+  }
+  console.log(
+    `  wrote doors-${plan.storey}.png, barrier-${plan.storey}.png, labels-${plan.storey}.png, ` +
+      `flood-${plan.storey}.png, rooms-${plan.storey}.png`,
   )
 }
