@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "web-pivot-07-holdout-1.0.0",
+  "stage": "STAGE_WEB_PIVOT_07_AUTOMATIC_SECTION_ELEVATION_SPEC",
+  "declaredAtCommit": "PENDING",
+  "declaredBefore": "any Stage-07 section, datum, roof, elevation, facade-opening or feature code was written",
+  "holdout": {
+    "key": "G",
+    "slug": "G-holdout",
+    "name": "Dom w kostrzewach 19",
+    "projectId": "m215297bb5224c",
+    "canonicalUrl": "https://www.archon.pl/projekty-domow/projekt-dom-w-kostrzewach-19-m215297bb5224c",
+    "sourcePackageId": "pkg_6f27e23c14270308",
+    "sourcePackageSchemaVersion": "3.0.0",
+    "sourcePackageHash": "6f27e23c142703087eb5d680915716347269039a1d25779038114ea5f51a55f4",
+    "documentHash": "9b8beb26885e95295dc8ec4cce1ac8d8fdfa03c371bccef49faa95e9ab46f8b4"
+  },
+  "selectionBasis": {
+    "criterion": "two things, and nothing else: (1) the SourcePackage role classifier reports the drawing roles Stage 07 consumes — at least one SECTION, four ELEVATION views and at least one DIMENSIONED floor plan; (2) the project's house family is not one already spent as A–F, so G is a different design rather than a sibling of a project whose drawings have been looked at",
+    "enumeration": "the families already spent are marcówki (A), bakopy (B), kosaćce (C), kruszczyki (D), wisterie (E) and malinówki (F). Of the families remaining on https://www.archon.pl/projekty-domow, the first in alphabetical order is kostrzewy, and the first of its projects in alphabetical order is kostrzewy 19. No other property of any candidate was consulted.",
+    "observed": [
+      "SECTION / ALL / CLEAN",
+      "ELEVATION / ALL / CLEAN / FRONT",
+      "ELEVATION / ALL / CLEAN / REAR",
+      "ELEVATION / ALL / CLEAN / LEFT",
+      "ELEVATION / ALL / CLEAN / RIGHT",
+      "FLOOR_PLAN / GROUND / DIMENSIONED",
+      "FLOOR_PLAN / GROUND / AREA_LABELS",
+      "SITE_PLAN / UNKNOWN / CLEAN",
+      "PERSPECTIVE_RENDER x 9"
+    ],
+    "notObserved": [
+      "no section image was decoded for inspection, rendered or measured",
+      "no elevation image was decoded for inspection, rendered or measured",
+      "no printed level, datum, dimension or pitch callout was read",
+      "no vertical level, storey height, knee wall, eave, ridge or total height figure was looked at",
+      "no roof topology, roof type, pitch, ridge orientation or roof-plane figure was looked at",
+      "no facade silhouette, opening count, opening position or opening size was looked at",
+      "no rooflight, chimney, balcony, loggia or recess evidence was looked at",
+      "no wall, room, door or plan opening value was transcribed"
+    ],
+    "note": "the role table above is what the automatic role classifier reported when the SourcePackage was built. It names which drawings exist, and nothing whatever about what any of them contains. Note also what it does NOT contain: G publishes one storey plan, not two. That is a fact about the package inventory, recorded here because the selection criterion is about inventory; it was not chosen for, and nothing about the building was inferred from it."
+  },
+  "rules": {
+    "tuning": "FORBIDDEN — no threshold, weight, tolerance or heuristic may be chosen against G",
+    "runs": "exactly one Stage-07 extraction run, after the Stage-07 code and config freeze",
+    "transcription": "FORBIDDEN — G gets no gold fixture",
+    "reporting": "self-consistency only. No accuracy claim is possible about G, because there is nothing to compare it to (§33)",
+    "afterTheRun": "no tuning of any kind inside this stage once G has been run, and no second extraction (§33)"
+  },
+  "supersedes": {
+    "F": {
+      "name": "Dom w malinówkach 58 (E)",
+      "reason": "spent as the WEB-PIVOT-06A holdout: run once under that freeze, and its doorways, host walls, room topology, open passages and per-storey opening widths were reported",
+      "roleNow": "HISTORICAL_HOLDOUT_WEB06A"
+    },
+    "E": { "name": "Dom w wisteriach 21", "reason": "spent as the WEB-PIVOT-06 holdout", "roleNow": "HISTORICAL_HOLDOUT_WEB06" },
+    "D": { "name": "Dom w kruszczykach 22", "reason": "spent as the WEB-02 holdout", "roleNow": "HISTORICAL_HOLDOUT_WEB02" },
+    "C": { "name": "Dom w kosaćcach 44", "reason": "spent as the WEB-01 holdout", "roleNow": "HISTORICAL_HOLDOUT_WEB01" }
+  }
+}

@@ -1,6 +1,6 @@
 /** The development projects, and the one untouched holdout among them. */
 export type DevProject = {
-  key: 'A' | 'B' | 'C' | 'D' | 'E' | 'F'
+  key: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G'
   slug: string
   name: string
   url: string
@@ -21,6 +21,7 @@ export type DevProject = {
     | 'HISTORICAL_HOLDOUT_WEB01'
     | 'HISTORICAL_HOLDOUT_WEB02'
     | 'HISTORICAL_HOLDOUT_WEB06'
+    | 'HISTORICAL_HOLDOUT_WEB06A'
   description: string
 }
 
@@ -78,13 +79,25 @@ export const PROJECTS: readonly DevProject[] = [
     slug: 'F-holdout',
     name: 'Dom w malin\u00f3wkach 58 (E)',
     url: 'https://www.archon.pl/projekty-domow/projekt-dom-w-malinowkach-58-e-m87928f6e82dd1',
+    role: 'HISTORICAL_HOLDOUT_WEB06A',
+    description:
+      'The WEB-PIVOT-06A holdout, run once under that freeze. Its doorways, host walls, room ' +
+      'topology, open passages and per-storey opening widths were reported, so its extracted ' +
+      'geometry has been looked at and it is spent. Kept as a fifth regression project.',
+  },
+  {
+    key: 'G',
+    slug: 'G-holdout',
+    name: 'Dom w kostrzewach 19',
+    url: 'https://www.archon.pl/projekty-domow/projekt-dom-w-kostrzewach-19-m215297bb5224c',
     role: 'HOLDOUT',
     description:
-      'The WEB-PIVOT-06A holdout, chosen before any doorway or topology code was written. ' +
-      'Selected on the presence of the drawing roles Stage 06A consumes and on nothing else: ' +
-      'dimensioned and area-labelled plans for both storeys, a section and four elevations. No ' +
-      'plan image has been decoded for inspection, no printed dimension read, and no wall, room, ' +
-      'door or opening value transcribed.',
+      'The WEB-PIVOT-07 holdout, chosen before any section, datum, roof or elevation code was ' +
+      'written. Selected on two things and nothing else: that the SourcePackage role classifier ' +
+      'reports the drawing roles Stage 07 consumes \u2014 a section, four technical elevations and ' +
+      'dimensioned plans \u2014 and that its house family is not one already spent as A\u2013F. No ' +
+      'section or elevation image has been decoded for inspection, no level, pitch, opening, ' +
+      'silhouette or roof-type value transcribed, and nothing tuned against it.',
   },
 ]
 
