@@ -17,6 +17,7 @@
     "freeze": "tsx src/node/cli.ts freeze",
     "holdout": "tsx src/node/cli.ts holdout",
     "ocr:benchmark": "tsx scripts/ocr-benchmark.ts",
+    "shell:diagnostic": "tsx scripts/shell-diagnostic.ts",
     "shell:evaluate": "tsx scripts/evaluate-shell.ts",
     "shell:freeze": "tsx scripts/freeze-shell.ts",
     "shell:holdout": "tsx scripts/holdout-shell.ts",
