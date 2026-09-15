@@ -392,11 +392,73 @@ pieces too short to survive the minimum-length rule.
 
 ## 18. Project B
 
-*(B section pending — filled in below once the frozen run completes.)*
+Project B — *Dom w bakopach (G2E)* — is a single-storey house with a double
+garage, deliberately unlike A: no usable attic, no knee wall, a much denser
+plan. It has no hand gold, so it is measured the way the source itself allows.
+
+| | |
+| --- | --- |
+| SourcePackage | `pkg_1022b43a09afde05` |
+| scale settled | 0.30453 px/cm |
+| walls | 95 runs, 114.8 m of fabric, 30 openings |
+| rooms | 13 |
+| adjacencies | 19 |
+| dimensions owned | 22 |
+| readings with no owner | 13 |
+
+The check that needs no transcription: B's bottom margin prints
+`690 + 810 = 1500` as three separate labels, and the reading set reproduces it.
+Its scale is corroborated by the plan's own extent — 1500 cm at 0.30453 px/cm is
+457 px, and the building spans about 455 px between its outer wall faces.
+
+Thirteen rooms out of a plan that publishes sixteen numbered spaces, with the
+same under-segmentation signature as A. Nothing catastrophic: no crash, no empty
+output, no claimed scale the drawing contradicts.
+
+`out/extract/B-bakopach/` holds the observations, the candidate and the sheet.
 
 ## 19. Holdout E, run once, under the freeze
 
-*(E section pending — filled in below.)*
+Run through `npm run extract:holdout`, which refused to start until the freeze
+existed and matched. One run. No tuning before it, none after it, and the result
+file is now the record that the holdout is spent.
+
+| | |
+| --- | --- |
+| project | E — *Dom w wisteriach 21* |
+| frozen at | `c8de5f4b0a926f40f1c7a1061b19113f3626df32` |
+| config hash | `026877dea4ecaa96cd41398a0c672942c592beab64910de4a791d6b2c7cde54f` |
+| engine | Tesseract 5.3.4 |
+| SourcePackage | `pkg_628c7c155684df83` |
+| ran at | 2026-09-15T15:42:21Z, 3.6 s |
+
+| | ground | attic |
+| --- | --- | --- |
+| scale | 0.34033 px/cm | 0.34033 px/cm — settled across the sheet set |
+| walls | 70 runs, 74.7 m of fabric | 74 runs, 123.0 m |
+| openings | 18, of which 5 doorway-width | 11, of which 5 doorway-width |
+| rooms | 5 (4.4 – 26.5 m²) | 11 (0.9 – 75.9 m²) |
+| adjacencies | 8, 3 with a doorway | 17, 2 with a doorway |
+| dimensions owned | 12 | 8 |
+| readings with no owner | 17 | 8 |
+| wall thickness p10/p50/p90 | 0.06 / 0.18 / 0.65 m | 0.06 / 0.12 / 0.20 m |
+| conflicts | 0 | 0 |
+
+**What can honestly be said.** The pipeline read a project it had never seen,
+end to end, and produced a metric candidate with provenance. Its two storeys —
+read independently — settled on the same scale, which is the only internal
+corroboration available without a transcription. The wall thicknesses it found
+are the thicknesses buildings have. Rooms were enclosed and adjacencies found on
+both storeys. Nothing crashed, nothing came back empty, and no distortion was
+claimed.
+
+**What cannot.** There is no gold for E and there will not be one, so its
+accuracy is not measured — only its behaviour. The attic's largest "room" at
+75.9 m² is the same under-segmentation seen on A, visible in the numbers without
+anyone having to look at the drawing. No sheet was rendered for E: rendering one
+would mean a second extraction pass over the holdout, and the brief allows one.
+
+The result is non-catastrophic generalization. It is not evidence of accuracy.
 
 ## 20. Mutations and fault injection
 
@@ -455,7 +517,35 @@ Outputs land under `out/extract/<slug>/`.
 
 ## 23. Gates
 
-*(filled in below.)*
+Every gate below was run. None is claimed unrun or inferred.
+
+| gate | command | result |
+| --- | --- | --- |
+| tests | `npx vitest run` | **25 files, 558 tests, all pass** (466 s) |
+| typecheck | `npm run typecheck` | clean |
+| build | `npm run build` | clean |
+| standalone build | `npm run standalone:build` | built |
+| browser | `npm run standalone:verify` | **11/11 checks pass**, one pre-existing console 404 |
+| benchmark | `npm run bench` | scores below |
+
+Stage 06 adds 72 tests across four files:
+`tests/extract-text.test.ts` (20), `tests/extract-dimensions.test.ts` (22),
+`tests/extract-plan.test.ts` (15), `tests/extract-isolation.test.ts` (15).
+
+Production scores, with the same command that produced them before this stage:
+
+| project | score before | score now |
+| --- | --- | --- |
+| A | 0.21756 | **0.2176** |
+| B | 0.21175 | **0.2118** |
+| C | 0.19570 | **0.1957** |
+| D | — (was the holdout) | 0.1576 |
+
+Unchanged to every reported digit. The Stage-06 code is not on that path.
+
+The engine-backed tests skip rather than fail where Tesseract is not installed,
+and the fixture-backed ones skip where the asset cache is absent. Both ran here:
+the figures above include them.
 
 ## 24. Production isolation
 
@@ -517,4 +607,17 @@ It should be measured on the same table in §17, on A only, and it should not be
 allowed to touch the holdout.
 
 ---
+
+## Result
+
+Two of the five §21 targets are met: zero room overlap, and every gold door
+detected or explicitly unresolved. Wall coverage reaches 70.2% and 75.1% where
+90% was asked, and adjacency agreement 10.0% and 37.5%. The floor-plan portion
+of a `SourcePackage` does now automatically produce a metric, provenance-rich
+`ArchitecturalSpecCandidate`, with no hand transcription and no remote model,
+and it generalizes without catastrophe to B and to a holdout run once under a
+freeze — but it does not meet the explicit A targets, and a PASS would be a
+claim the numbers do not support.
+
+`PARTIAL_STAGE_WEB_PIVOT_06_AUTOMATIC_FLOORPLAN_SPEC`
 

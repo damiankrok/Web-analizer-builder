@@ -74,6 +74,14 @@ for (const note of c.notes) console.log(`      ${note}`)
 
 const outDir = join('out', 'extract', project.slug)
 mkdirSync(outDir, { recursive: true })
-writeFileSync(join(outDir, 'observations.json'), `${JSON.stringify({ elapsedMs, ...result }, null, 2)}\n`, 'utf8')
+// The per-pixel label map is tens of megabytes as JSON and is reproducible
+// from the walls in a moment; the diagnostics read it from memory, not from
+// here.
+const withoutLabels = {
+  elapsedMs,
+  ...result,
+  plans: result.plans.map((p) => ({ ...p, model: { ...p.model, labels: undefined } })),
+}
+writeFileSync(join(outDir, 'observations.json'), `${JSON.stringify(withoutLabels, null, 2)}\n`, 'utf8')
 writeFileSync(join(outDir, 'spec-candidate.json'), `${JSON.stringify(c, null, 2)}\n`, 'utf8')
 console.log(`\nwrote ${join(outDir, 'observations.json')} and spec-candidate.json`)
