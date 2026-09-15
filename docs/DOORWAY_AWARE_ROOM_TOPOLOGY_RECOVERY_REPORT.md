@@ -13,7 +13,7 @@ stage reads the door instead.
 | --- | --- |
 | starting HEAD | `9b78e438b498f1b1889fe1267df42f876173c3f3` |
 | frozen at | `d94db119a840bf02164c05b1eee21d453b9bb694` — the last code commit |
-| final HEAD | this report |
+| final HEAD | `b48413f` — this report; the last code commit is `d94db11`, which is what the freeze pins |
 | worktree at the start | clean, no unknown changes |
 
 | commit | what |
