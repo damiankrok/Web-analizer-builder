@@ -1,0 +1,185 @@
+{
+  "schemaVersion": "ocr-plan-digits-1.0.0",
+  "kind": "EVALUATION_ONLY",
+  "notForProduction": true,
+  "purpose": "STAGE WEB-PIVOT-06 §6. A hand-verified list of every printed dimension token on project A's two DIMENSIONED floor plans, used to measure one text recogniser against another. It is read by the benchmark and by tests, never by extraction code.",
+  "project": "A (token truth) and B (printed closures only)",
+  "sourcePackageId": "pkg_29b62d3714de8bc4",
+  "method": {
+    "howRead": "Each plan was dumped to PNG at native resolution (scripts/_dump.ts) and read by eye at 4x to 10x magnification (scripts/_crop.mjs). Every token below was seen directly; none was inferred from arithmetic, from another drawing, or from an earlier stage's gold.",
+    "whatCounts": "Printed *dimension* text only: chain segments, chain overalls, and the two halves of an opening callout. Room index numbers (the large red 1..9), the publisher's watermark and the logo are not dimension text and are excluded.",
+    "units": "Centimetres, exactly as printed. A callout prints width over height.",
+    "matching": "The benchmark compares multisets of strings, not positions, and says so: a correct number read in the wrong place still counts as correct here. Whether a number found its right physical owner is measured separately, by the association stage against the geometry gold."
+  },
+  "plans": [
+    {
+      "storey": "GROUND",
+      "assetId": "asset_8fda78f8654c",
+      "roles": "FLOOR_PLAN / GROUND / DIMENSIONED",
+      "px": [
+        853,
+        853
+      ],
+      "chainOverall": [
+        "1205",
+        "1260"
+      ],
+      "chainSegments": [
+        "790",
+        "415",
+        "510",
+        "750",
+        "100",
+        "100",
+        "700",
+        "414",
+        "446",
+        "265",
+        "142",
+        "325",
+        "290",
+        "190",
+        "196",
+        "203",
+        "312",
+        "160",
+        "660",
+        "375"
+      ],
+      "callouts": [
+        {
+          "width": "470",
+          "height": "230"
+        },
+        {
+          "width": "300",
+          "height": "230"
+        },
+        {
+          "width": "90",
+          "height": "230"
+        },
+        {
+          "width": "140",
+          "height": "140"
+        },
+        {
+          "width": "100",
+          "height": "210"
+        },
+        {
+          "width": "110",
+          "height": "230"
+        },
+        {
+          "width": "105",
+          "height": "210"
+        },
+        {
+          "width": "275",
+          "height": "225"
+        }
+      ]
+    },
+    {
+      "storey": "UPPER_ATTIC",
+      "assetId": "asset_8460d17163a4",
+      "roles": "FLOOR_PLAN / UPPER_ATTIC / DIMENSIONED",
+      "px": [
+        853,
+        853
+      ],
+      "chainOverall": [],
+      "chainSegments": [
+        "140",
+        "220",
+        "220",
+        "140",
+        "344",
+        "344",
+        "449",
+        "325",
+        "134",
+        "217",
+        "202",
+        "248",
+        "290",
+        "235",
+        "398",
+        "325"
+      ],
+      "callouts": [
+        {
+          "width": "234",
+          "height": "303"
+        },
+        {
+          "width": "234",
+          "height": "303"
+        },
+        {
+          "width": "78",
+          "height": "118"
+        },
+        {
+          "width": "78",
+          "height": "118"
+        },
+        {
+          "width": "78",
+          "height": "118"
+        },
+        {
+          "width": "270",
+          "height": "320"
+        }
+      ]
+    }
+  ],
+  "closures": {
+    "note": "Arithmetic the source itself prints, kept so a reading set can be checked without any hand truth at all. Each is a sum a correct reader must reproduce from its own observations (§9). Project B has no hand transcription and is scored only this way.",
+    "checks": [
+      {
+        "project": "A",
+        "plan": "GROUND",
+        "parts": [
+          "790",
+          "415"
+        ],
+        "total": "1205",
+        "where": "top margin, the overall width chain"
+      },
+      {
+        "project": "A",
+        "plan": "GROUND",
+        "parts": [
+          "510",
+          "750"
+        ],
+        "total": "1260",
+        "where": "right margin, the overall depth chain"
+      },
+      {
+        "project": "B",
+        "plan": "GROUND",
+        "parts": [
+          "690",
+          "810"
+        ],
+        "total": "1500",
+        "where": "bottom margin, the overall width chain"
+      },
+      {
+        "project": "B",
+        "plan": "GROUND",
+        "parts": [
+          "640",
+          "860",
+          "625"
+        ],
+        "total": "2125",
+        "where": "right margin, the overall depth chain"
+      }
+    ]
+  }
+}

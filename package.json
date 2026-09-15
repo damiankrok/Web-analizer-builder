@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "RESEARCH-ANALYZER-WEB-01 \u2014 camera-aware multi-view web analyzer for ARCHON project pages",
+  "description": "RESEARCH-ANALYZER-WEB-01 — camera-aware multi-view web analyzer for ARCHON project pages",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -13,6 +13,7 @@
     "source:package": "tsx src/node/cli.ts source:package",
     "analyze": "tsx src/node/cli.ts analyze",
     "bench": "tsx src/node/cli.ts bench",
+    "ocr:benchmark": "tsx scripts/ocr-benchmark.ts",
     "freeze": "tsx src/node/cli.ts freeze",
     "holdout": "tsx src/node/cli.ts holdout",
     "ui:dev": "vite",
