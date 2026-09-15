@@ -30,7 +30,10 @@ const loaded = await loadSource(project.url, {
   htmlPath: `fixtures/${project.slug}/page.html`,
 })
 
-const result = extractPlanSpec(loaded.pkg, loaded.images, DEFAULT_EXTRACTION)
+const result = extractPlanSpec(loaded.pkg, loaded.images, DEFAULT_EXTRACTION, {
+  sourcePackageId: loaded.source.packageId,
+  sourcePackageHash: loaded.source.contentHash,
+})
 
 console.log(`\n=== ${project.key}: ${project.name}`)
 for (const note of result.notes) console.log(`  ${note}`)
@@ -45,7 +48,30 @@ for (const plan of result.plans) {
   console.log(`      unowned:     ${orphans.map((o) => o.text).join(' ') || '(none)'}`)
 }
 
+const c = result.candidate
+console.log(`\n  --- candidate ${c.schemaVersion} (${c.kind}, notCanonical ${c.notCanonical})`)
+console.log(`      package ${c.sourcePackageId} ${c.sourcePackageHash.slice(0, 16)}`)
+console.log(
+  `      frame ${c.frame ? `${c.frame.pxPerCm.toFixed(5)} px/cm, origin ${c.frame.originPx.x.toFixed(1)},${c.frame.originPx.y.toFixed(1)} px` : 'not established'}`,
+)
+for (const s of c.storeys) {
+  const solid = s.walls.reduce((n, w) => n + w.solidM, 0)
+  const openings = s.walls.reduce((n, w) => n + w.openings.length, 0)
+  console.log(
+    `      ${s.storey.padEnd(12)} ${s.walls.length} walls (${solid.toFixed(1)} m of fabric, ${openings} openings), ` +
+      `${s.rooms.length} rooms, ${s.adjacency.length} adjacencies, ${s.dimensions.length} owned dimensions, ` +
+      `${s.unownedReadings.length} unowned readings`,
+  )
+}
+for (const conflict of c.conflicts) {
+  console.log(`      conflict ${conflict.kind} (confidence ${conflict.confidence.toFixed(2)})`)
+  for (const o of conflict.observations) console.log(`        saw: ${o}`)
+  console.log(`        open: ${conflict.unresolved}`)
+}
+for (const note of c.notes) console.log(`      ${note}`)
+
 const outDir = join('out', 'extract', project.slug)
 mkdirSync(outDir, { recursive: true })
 writeFileSync(join(outDir, 'observations.json'), `${JSON.stringify(result, null, 2)}\n`, 'utf8')
-console.log(`\nwrote ${join(outDir, 'observations.json')}`)
+writeFileSync(join(outDir, 'spec-candidate.json'), `${JSON.stringify(c, null, 2)}\n`, 'utf8')
+console.log(`\nwrote ${join(outDir, 'observations.json')} and spec-candidate.json`)

@@ -26,6 +26,9 @@ import {
   type ScaleEstimate,
 } from '../core/extract/dimension-observations.js'
 import type { PlanTextReading } from '../core/extract/text-engine.js'
+import { detectWallBands, type WallBand } from '../core/extract/wall-bands.js'
+import { buildPlanModel, type PlanModel } from '../core/extract/plan-model.js'
+import { buildSpecCandidate, type ArchitecturalSpecCandidate } from '../core/extract/spec-candidate.js'
 import { TesseractEngine } from './ocr/tesseract.js'
 
 export type ExtractionOptions = {
@@ -65,12 +68,16 @@ export type PlanExtraction = {
   observations: DimensionObservation[]
   scales: ScaleEstimate[]
   distortion: ObservationResult['distortion']
+  walls: WallBand[]
+  model: PlanModel
   notes: string[]
 }
 
 export type ExtractionResult = {
   engine: { id: string; version: string; kind: string }
   plans: PlanExtraction[]
+  /** What the drawings propose. A candidate, never canonical (§17). */
+  candidate: ArchitecturalSpecCandidate
   /** Scale the project's drawings agreed on, when they did. */
   sheetScale: { pxPerCm: number; score: number; adoptedBy: string[] } | null
   notes: string[]
@@ -80,7 +87,9 @@ export function extractPlanSpec(
   pkg: ParsedSource,
   images: Map<string, RasterImage>,
   options: ExtractionOptions = DEFAULT_EXTRACTION,
+  provenance: { sourcePackageId?: string; sourcePackageHash?: string } = {},
 ): ExtractionResult {
+  const { sourcePackageId, sourcePackageHash } = provenance
   const engine = options.engine ?? new TesseractEngine()
   const notes: string[] = []
 
@@ -178,6 +187,11 @@ export function extractPlanSpec(
 
   const plans: PlanExtraction[] = prepared.map((p) => {
     const built = final.get(p.assetId)!
+    // Walls are measured at the scale the chains established, because their
+    // thickness has to be tested in metres to mean anything (§11).
+    const scale = built.scales.find((s) => s.pxPerCm !== null)?.pxPerCm ?? null
+    const walls = detectWallBands(p.gray, scale)
+    const model = buildPlanModel(p.gray, walls.bands, scale)
     return {
       storey: p.storey,
       assetId: p.assetId,
@@ -189,13 +203,36 @@ export function extractPlanSpec(
       observations: built.observations,
       scales: built.scales,
       distortion: built.distortion,
-      notes: [`${p.regions.length} text-region readings offered`, ...p.structures.notes, ...built.notes],
+      walls: walls.bands,
+      model,
+      notes: [
+        `${p.regions.length} text-region readings offered`,
+        ...p.structures.notes,
+        ...built.notes,
+        ...walls.notes,
+        ...model.notes,
+      ],
     }
+  })
+
+  const candidate = buildSpecCandidate({
+    project: pkg.identity.projectCode,
+    sourcePackageId: sourcePackageId ?? 'unknown',
+    sourcePackageHash: sourcePackageHash ?? 'unknown',
+    engine: { id: engine.id, version: engine.version },
+    storeys: plans.map((p) => ({
+      storey: p.storey,
+      assetId: p.assetId,
+      pxPerCm: p.scales.find((s) => s.pxPerCm !== null)?.pxPerCm ?? null,
+      model: p.model,
+      observations: p.observations,
+    })),
   })
 
   return {
     engine: { id: engine.id, version: engine.version, kind: engine.kind },
     plans,
+    candidate,
     sheetScale,
     notes,
   }

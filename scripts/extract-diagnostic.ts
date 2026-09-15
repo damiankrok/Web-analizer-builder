@@ -7,6 +7,9 @@
  *   baselines   every baseline, its anchors and the intervals they cut
  *   regions     every text run, with the candidates that could own it
  *   overlay     a PNG with baselines, anchors and text runs drawn on the plan
+ *   walls       the wall bands, with their two faces and thickness
+ *   rooms       the wall runs, the regions they enclose and what adjoins what
+ *   plan        a PNG of the wall runs, their openings and the rooms
  *   scale       the pairings that voted for the sheet's scale
  *   row N       the ink profile across one row, to see what a detector saw
  *   col N       the ink profile down one column
@@ -24,7 +27,9 @@ import { detectTextRegions } from '../src/core/extract/text-regions.js'
 import { detectDimensionStructures } from '../src/core/extract/dimension-structures.js'
 import { buildTextCrops } from '../src/core/extract/text-crops.js'
 import { DEFAULT_PLAN_TEXT } from '../src/core/extract/text-engine.js'
-import { buildObservations, parsePlanCentimetres } from '../src/core/extract/dimension-observations.js'
+import { buildObservations } from '../src/core/extract/dimension-observations.js'
+import { detectWallBands } from '../src/core/extract/wall-bands.js'
+import { buildPlanModel } from '../src/core/extract/plan-model.js'
 import { TesseractEngine } from '../src/node/ocr/tesseract.js'
 
 const project = projectByKey(process.argv[2] ?? 'A')!
@@ -86,6 +91,108 @@ if (view === 'row' || view === 'col') {
         `glyphs ${r.glyphs} h ${r.glyphHeightPx} -> near ${reach.length} baselines` +
         (reach.length > 0 ? `: ${reach.map((c) => `${c.baselineId}(${c.offsetPx.toFixed(0)}px off)`).join(' ')}` : ''),
     )
+  }
+} else if (view === 'walls') {
+  const crops = buildTextCrops(
+    gray,
+    regions.map((r) => ({ id: r.id, box: r.box, orientation: r.orientation })),
+  )
+  const built = buildObservations(new TesseractEngine().readBatch(crops, DEFAULT_PLAN_TEXT), regions, structures)
+  const scale = built.scales.find((s) => s.pxPerCm !== null)?.pxPerCm ?? null
+  const { bands, notes } = detectWallBands(gray, scale)
+  for (const n of notes) console.log('  ' + n)
+  for (const b of bands.sort((x, y) => (x.axis < y.axis ? -1 : 1) || x.nearPx - y.nearPx)) {
+    const m = (px: number): string => (scale ? (px / scale / 100).toFixed(2) : '?')
+    console.log(
+      `  ${b.id.padEnd(6)} ${b.axis} faces ${b.nearPx.toFixed(1)}..${b.farPx.toFixed(1)} ` +
+        `(${b.thicknessPx.toFixed(1)} px = ${m(b.thicknessPx)} m)  runs ${b.fromPx}..${b.toPx} ` +
+        `(${m(b.toPx - b.fromPx)} m)  coverage ${(b.coverage * 100).toFixed(0)}%`,
+    )
+  }
+} else if (view === 'rooms' || view === 'plan') {
+  const crops = buildTextCrops(
+    gray,
+    regions.map((r) => ({ id: r.id, box: r.box, orientation: r.orientation })),
+  )
+  const built = buildObservations(new TesseractEngine().readBatch(crops, DEFAULT_PLAN_TEXT), regions, structures)
+  const scale = built.scales.find((s) => s.pxPerCm !== null)?.pxPerCm ?? null
+  const { bands } = detectWallBands(gray, scale)
+  const model = buildPlanModel(gray, bands, scale)
+  for (const n of model.notes) console.log('  ' + n)
+  const m = (px: number): string => (scale ? (px / scale / 100).toFixed(2) : '?')
+  if (view === 'rooms') {
+    console.log('\n  wall runs:')
+    for (const r of model.runs.sort((a, b) => (a.axis < b.axis ? -1 : 1) || a.nearPx - b.nearPx)) {
+      const solid = r.solid.reduce((n2, s2) => n2 + (s2.toPx - s2.fromPx), 0)
+      console.log(
+        `  ${r.id.padEnd(6)} ${r.axis} faces ${m(r.nearPx)}..${m(r.farPx)} m thick ${m(r.thicknessPx)} ` +
+          `runs ${m(r.fromPx)}..${m(r.toPx)} m, solid ${m(solid)} m, ` +
+          `${r.openings.length} opening${r.openings.length === 1 ? '' : 's'}` +
+          (r.openings.length > 0 ? ` (${r.openings.map((o) => `${m(o.lengthPx)} m`).join(', ')})` : ''),
+      )
+    }
+    console.log('\n  rooms:')
+    for (const r of model.rooms.sort((a, b) => b.areaPx - a.areaPx)) {
+      const areaM2 = scale ? r.areaPx / (100 * scale) ** 2 : 0
+      console.log(
+        `  ${r.id.padEnd(6)} ${areaM2.toFixed(2)} m\u00b2  box ${m(r.box.x0)},${m(r.box.y0)}..${m(r.box.x1)},${m(r.box.y1)} m`,
+      )
+    }
+    console.log('\n  adjacency:')
+    for (const a of model.adjacency.sort((x, y) => y.sharedPx - x.sharedPx)) {
+      console.log(
+        `  ${a.a} - ${a.b} across ${a.wallRunId}, ${m(a.sharedPx)} m shared` +
+          (a.openings.length > 0 ? `, ${a.openings.length} doorway (${a.openings.map((o) => m(o.lengthPx)).join(', ')} m)` : ', no doorway'),
+      )
+    }
+  } else {
+    const png = new PNG({ width: gray.width, height: gray.height })
+    for (let i = 0; i < gray.width * gray.height; i++) {
+      const v = 255 - Math.round((255 - gray.data[i]) * 0.2)
+      png.data[i * 4] = png.data[i * 4 + 1] = png.data[i * 4 + 2] = v
+      png.data[i * 4 + 3] = 255
+    }
+    const keep = new Map(model.rooms.map((r, i) => [r.id, i]))
+    const hue = (i: number): [number, number, number] => {
+      const t = (i * 0.61803398875) % 1
+      const k = (n: number): number => Math.round(255 * (0.55 + 0.45 * Math.sin(2 * Math.PI * (t + n / 3))))
+      return [k(0), k(1), k(2)]
+    }
+    for (let i = 0; i < model.labels.length; i++) {
+      const id = model.labels[i]
+      if (id < 0) continue
+      const index = keep.get(`rg${id}`)
+      if (index === undefined) continue
+      const c = hue(index)
+      png.data[i * 4] = Math.round(png.data[i * 4] * 0.55 + c[0] * 0.45)
+      png.data[i * 4 + 1] = Math.round(png.data[i * 4 + 1] * 0.55 + c[1] * 0.45)
+      png.data[i * 4 + 2] = Math.round(png.data[i * 4 + 2] * 0.55 + c[2] * 0.45)
+    }
+    const dot = (x: number, y: number, c: [number, number, number]): void => {
+      const xi = Math.round(x)
+      const yi = Math.round(y)
+      if (xi < 0 || yi < 0 || xi >= gray.width || yi >= gray.height) return
+      const i = (yi * gray.width + xi) * 4
+      png.data[i] = c[0]
+      png.data[i + 1] = c[1]
+      png.data[i + 2] = c[2]
+    }
+    for (const run of model.runs) {
+      for (let a = Math.floor(run.fromPx); a <= Math.ceil(run.toPx); a++) {
+        const open = run.openings.some((o) => a >= o.fromPx && a <= o.toPx)
+        const c: [number, number, number] = open ? [230, 40, 40] : [20, 90, 220]
+        if (run.axis === 'X') {
+          dot(a, run.nearPx, c)
+          dot(a, run.farPx, c)
+        } else {
+          dot(run.nearPx, a, c)
+          dot(run.farPx, a, c)
+        }
+      }
+    }
+    const file = `${outDir}/${storey}-plan.png`
+    writeFileSync(file, PNG.sync.write(png))
+    console.log(`\n  wrote ${file} — blue wall faces, red openings, rooms tinted`)
   }
 } else if (view === 'scale' || view === 'overlay') {
   const crops = buildTextCrops(
