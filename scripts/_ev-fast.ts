@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { loadSource } from '../src/node/source-loader.js'
 import { projectByKey } from '../src/node/projects.js'
 import { extractPlanSpec, DEFAULT_EXTRACTION } from '../src/node/extract-runner.js'
+import { CachedEngine } from './_cache-engine.js'
 import { evaluateCandidate, type Gold } from '../tests/candidate-evaluator.js'
 
 const key = (process.argv[2] ?? 'A').toUpperCase()
@@ -25,7 +26,7 @@ const loaded = await loadSource(project.url, {
   cacheDir: `fixtures/${project.slug}/assets`,
   htmlPath: `fixtures/${project.slug}/page.html`,
 })
-const result = extractPlanSpec(loaded.pkg, loaded.images, DEFAULT_EXTRACTION, {
+const result = extractPlanSpec(loaded.pkg, loaded.images, { ...DEFAULT_EXTRACTION, engine: new CachedEngine(project.slug) }, {
   sourcePackageId: loaded.source.packageId,
   sourcePackageHash: loaded.source.contentHash,
 })

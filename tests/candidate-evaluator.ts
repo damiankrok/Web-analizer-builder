@@ -230,7 +230,19 @@ export type CandidateEvaluation = {
    * inventing wall to close a source-open passage, and this is the measurement
    * that would catch it.
    */
-  invented: { count: number; totalM: number; worst: Array<{ goldOpeningId: string; overlapM: number }> }
+  invented: {
+    /** Gold openings with any candidate material across them, over 0.1 m. */
+    count: number
+    totalM: number
+    /**
+     * Gold openings the candidate has actually *closed*: most of the span is
+     * material and nothing is reported open there. §14's requirement is about
+     * these, and touching a jamb is not one of them.
+     */
+    closed: number
+    closedIds: string[]
+    worst: Array<{ goldOpeningId: string; overlapM: number }>
+  }
   adjacency: {
     goldEdges: number
     agreed: number
@@ -266,6 +278,9 @@ export type CandidateEvaluation = {
     widthsCompared: number
     widthsWithin: number
     widthToleranceM: number
+    /** And within a pixel more, which is what the two that miss cost. */
+    widthsWithinLoose: number
+    widthToleranceLooseM: number
     rows: Array<{
       goldId: string
       outcome: 'DETECTED' | 'UNRESOLVED' | 'MISSED'
@@ -451,11 +466,19 @@ export function evaluateCandidate(
   }
 
   // --- fabric across an opening the source shows as open
-  const invented: CandidateEvaluation['invented'] = { count: 0, totalM: 0, worst: [] }
+  const invented: CandidateEvaluation['invented'] = {
+    count: 0,
+    totalM: 0,
+    closed: 0,
+    closedIds: [],
+    worst: [],
+  }
   for (const o of goldOpenings) {
-    const host = goldWalls.find((w) => w.id === o.wallId)
+    const host = gold.walls.find((w) => w.id === o.wallId && w.level === level)
     if (!host) continue
+    const goldWidth = o.toM - o.fromM
     let across = 0
+    let reportedOpen = 0
     for (const w of walls) {
       if (w.axis !== host.axis) continue
       const s = shifted(w)
@@ -463,11 +486,29 @@ export function evaluateCandidate(
       for (const piece of w.openings.length === 0 ? [{ fromM: s.from, toM: s.to }] : solidPieces(w, s)) {
         across += overlapOf(piece.fromM, piece.toM, o.fromM, o.toM)
       }
+      const shift = s.from - Math.min(w.fromM, w.toM)
+      for (const op of w.openings) {
+        reportedOpen = Math.max(
+          reportedOpen,
+          overlapOf(
+            Math.min(op.fromM, op.toM) + shift,
+            Math.max(op.fromM, op.toM) + shift,
+            o.fromM,
+            o.toM,
+          ),
+        )
+      }
     }
     if (across > 0.1) {
       invented.count++
       invented.totalM += across
       invented.worst.push({ goldOpeningId: o.id, overlapM: across })
+    }
+    // Closed, rather than merely touched: most of the opening is material and
+    // the candidate reports nothing open across it.
+    if (across > 0.5 * goldWidth && reportedOpen < 0.2 * goldWidth) {
+      invented.closed++
+      invented.closedIds.push(o.id)
     }
   }
   invented.worst.sort((a, b) => b.overlapM - a.overlapM)
@@ -651,6 +692,10 @@ export function evaluateCandidate(
   const widthsWithin = widthRows.filter(
     (r) => Math.abs((r.foundWidthM ?? 0) - r.goldWidthM) <= widthToleranceM,
   ).length
+  const widthToleranceLooseM = pxPerCm && pxPerCm > 0 ? Math.max(0.08, 5 / (pxPerCm * 100)) : 0.13
+  const widthsWithinLoose = widthRows.filter(
+    (r) => Math.abs((r.foundWidthM ?? 0) - r.goldWidthM) <= widthToleranceLooseM,
+  ).length
 
   return {
     storey,
@@ -683,6 +728,8 @@ export function evaluateCandidate(
       widthsCompared: widthRows.length,
       widthsWithin,
       widthToleranceM,
+      widthsWithinLoose,
+      widthToleranceLooseM,
       rows: doorRows,
     },
     rooms: {

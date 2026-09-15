@@ -290,13 +290,27 @@ describe('§21 project A, measured against the hand gold', () => {
       expect(Math.abs(e.alignment.dx)).toBeLessThan(1)
 
       expect(e.walls.coverage).toBeGreaterThan(0.6)
-      // Almost nothing of the candidate's fabric lies across an opening the
-      // source shows as open (§21). What little does is jamb-width.
+      // §14's wall target: the *logical* host wall — its material plus the
+      // openings it accounts for — against the gold's whole length.
+      expect(e.decomposition.logicalCoverage, `${storey} logical wall`).toBeGreaterThanOrEqual(0.9)
+      // And the counterpart that stops it being reached by filling openings
+      // in: not one source-open passage is closed by candidate material.
+      expect(e.invented.closed, `${storey} closed openings: ${e.invented.closedIds.join(', ')}`).toBe(0)
       expect(e.invented.totalM).toBeLessThan(1)
       // Every gold door is either found or explicitly unresolved; none is
       // silently lost.
       expect(e.doors.rate).toBe(1)
       expect(e.doors.rows.every((r) => r.why.length > 0)).toBe(true)
+      // §14's door target: read *as a door*, on the wall the gold names.
+      expect(e.doors.asDoorRate, `${storey} doors read as DOOR`).toBeGreaterThanOrEqual(0.9)
+      expect(e.doors.hostRate, `${storey} doors on the right host`).toBeGreaterThanOrEqual(0.9)
+      // §14's room targets.
+      expect(e.adjacency.rate, `${storey} adjacency`).toBeGreaterThanOrEqual(0.9)
+      expect(e.rooms.goldCovered, `${storey} gold rooms covered`).toBe(e.rooms.goldRooms)
+      expect(
+        e.rooms.merged <= 1 || e.rooms.mergedUnresolved === e.rooms.merged,
+        `${storey}: ${e.rooms.merged} merged regions, ${e.rooms.mergedUnresolved} marked unresolved`,
+      ).toBe(true)
       // Every gold adjacency edge is accounted for as agreed, merged or
       // missing — the categories have to add up.
       expect(e.adjacency.agreed + e.adjacency.merged + e.adjacency.missing).toBe(e.adjacency.goldEdges)
