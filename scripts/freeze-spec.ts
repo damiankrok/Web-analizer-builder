@@ -1,5 +1,5 @@
 /**
- * STAGE WEB-PIVOT-06 §23 — freeze the extraction before the holdout runs.
+ * STAGE WEB-PIVOT-06A §17 — freeze the extraction before the holdout runs.
  *
  *   npx tsx scripts/freeze-spec.ts
  *
@@ -24,13 +24,13 @@ try {
 const engine = TesseractEngine.available()
 
 const payload = {
-  stage: 'STAGE_WEB_PIVOT_06_AUTOMATIC_FLOORPLAN_TO_SPEC',
+  stage: 'STAGE_WEB_PIVOT_06A_DOORWAY_ROOM_TOPOLOGY',
   frozenAt: new Date().toISOString(),
   codeSha,
   configHash,
   engine: { id: engine.engineId, version: engine.version, available: engine.available },
 }
 mkdirSync('out', { recursive: true })
-writeFileSync('out/freeze-web-pivot-06.json', `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+writeFileSync('out/freeze-web-pivot-06a.json', `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
 console.log(JSON.stringify(payload, null, 2))
-console.log('\nwrote out/freeze-web-pivot-06.json')
+console.log('\nwrote out/freeze-web-pivot-06a.json')
