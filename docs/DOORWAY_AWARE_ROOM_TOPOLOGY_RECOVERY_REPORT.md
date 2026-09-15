@@ -514,6 +514,15 @@ sheets per storey under `out/extract/<slug>/` and prints three listings.
 Plus `labels-*.png`, the room labels the area-labelled copy prints, placed by
 the shift the two copies were aligned at.
 
+Two development-only tools sit beside them: `scripts/_pngcrop.ts`, which cuts a
+magnified crop out of any of the sheets, and `scripts/_cache-engine.ts`, which
+puts a cache in front of the OCR engine keyed by the exact bytes of each crop.
+The cache exists because Tesseract dominates the wall clock of every run and
+this stage changes nothing an engine sees, so an iteration is seconds rather
+than minutes. **No figure in this report came from it**: every number above was
+produced by a run through the real engine, and the freeze and the holdout have
+no path to it at all.
+
 For B, the same command writes the same sheets and the before/after figures
 §16 reports. For F, the one-shot command printed the figures in §17 and no
 sheet was rendered.
