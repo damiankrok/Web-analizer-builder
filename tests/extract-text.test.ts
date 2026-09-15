@@ -49,6 +49,33 @@ const block = (g: GrayImage, x0: number, y0: number, w: number, h: number, v = 2
   for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) g.data[y * g.width + x] = v
 }
 
+/**
+ * A 5x7 bitmap digit font, so a test can put real text in front of an engine
+ * without a fixture, a font file or a drawing.
+ */
+const FONT: Record<string, string[]> = {
+  '0': ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
+  '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+  '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+  '3': ['####.', '....#', '....#', '.###.', '....#', '....#', '####.'],
+}
+
+/** `text` drawn at `k` pixels per font cell, on paper, with a wide margin. */
+function drawDigits(text: string, k = 6): GrayImage {
+  const margin = 8 * k
+  const g = blank(text.length * 6 * k + margin * 2, 7 * k + margin * 2, 255)
+  text.split('').forEach((ch, i) => {
+    const rows = FONT[ch]
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 5; c++) {
+        if (rows[r][c] !== '#') continue
+        block(g, margin + (i * 6 + c) * k, margin + r * k, k, k, 0)
+      }
+    }
+  })
+  return g
+}
+
 describe('§3 raster normalization', () => {
   it('keeps a saturated red annotation dark where luminance turns it grey', () => {
     // Red ink on white paper, with neutral grey furniture hatching beside it.
@@ -228,21 +255,39 @@ describe('§6 crops and the engine seam', () => {
     }
   })
 
-  withEngine('keeps each reading with its own crop across a batch', () => {
-    const one = blank(120, 60)
-    block(one, 30, 15, 14, 30)
-    const two = blank(120, 60)
-    block(two, 30, 15, 14, 30)
-    block(two, 60, 15, 14, 30)
+  /**
+   * The regression this exists for: the batch's page numbers count from one,
+   * and reading them as indices attributes every number to the crop before it.
+   * A blank crop alongside a written one makes the mistake visible — the blank
+   * page is the one page that can have no reading of its own, so any reading
+   * landing on it is a shifted one. A test that only checks which ids appear
+   * cannot see this, and did not.
+   */
+  withEngine('attributes each reading to the crop it actually came from', () => {
+    const written = drawDigits('1203')
+    const empty = blank(written.width, written.height, 255)
+    const box = { x0: 0, y0: 0, x1: written.width, y1: written.height }
     const engine = new TesseractEngine()
     const readings = engine.readBatch(
       [
-        { id: 'first', gray: one, sourceBox: { x0: 0, y0: 0, x1: 120, y1: 60 }, orientation: 'HORIZONTAL', scale: 1 },
-        { id: 'second', gray: two, sourceBox: { x0: 0, y0: 0, x1: 120, y1: 60 }, orientation: 'HORIZONTAL', scale: 1 },
+        { id: 'written', gray: written, sourceBox: box, orientation: 'HORIZONTAL', scale: 1 },
+        { id: 'blank', gray: empty, sourceBox: box, orientation: 'HORIZONTAL', scale: 1 },
       ],
       DEFAULT_PLAN_TEXT,
     )
-    for (const r of readings) expect(['first', 'second']).toContain(r.cropId)
+    expect(readings.length).toBeGreaterThan(0)
+    for (const r of readings) expect(r.cropId).toBe('written')
+
+    // ...and the other way round, so a shift in either direction is caught.
+    const swapped = engine.readBatch(
+      [
+        { id: 'blank', gray: empty, sourceBox: box, orientation: 'HORIZONTAL', scale: 1 },
+        { id: 'written', gray: written, sourceBox: box, orientation: 'HORIZONTAL', scale: 1 },
+      ],
+      DEFAULT_PLAN_TEXT,
+    )
+    expect(swapped.length).toBeGreaterThan(0)
+    for (const r of swapped) expect(r.cropId).toBe('written')
   })
 
   withEngine('returns nothing for an empty batch and leaves no working directory', () => {

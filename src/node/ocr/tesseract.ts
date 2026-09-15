@@ -45,7 +45,7 @@
  * NODE_ONLY.
  */
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PNG } from 'pngjs'
 import type { GrayImage } from '../../core/contracts/raster.js'
@@ -70,7 +70,12 @@ export type TesseractOptions = {
    * a whole plan and hoping.
    */
   psm: string
-  /** Directory the batch's PNGs are written to. Removed afterwards. */
+  /**
+   * Directory the batches' scratch PNGs live under. Each batch gets its own
+   * subdirectory inside it and removes only that, so two extractions running
+   * at once — two test files, two projects — cannot delete each other's crops
+   * out from under Tesseract.
+   */
   workDir: string
   /** Character height the crops are enlarged towards. */
   targetTextPx: number
@@ -138,8 +143,8 @@ export class TesseractEngine implements PlanTextEngine {
 
   readBatch(crops: readonly PlanTextCrop[], opts: PlanTextOptions): PlanTextReading[] {
     if (crops.length === 0) return []
-    const dir = this.opts.workDir
-    mkdirSync(dir, { recursive: true })
+    mkdirSync(this.opts.workDir, { recursive: true })
+    const dir = mkdtempSync(join(this.opts.workDir, 'batch-'))
     const paths: string[] = []
     try {
       for (let i = 0; i < crops.length; i++) {
@@ -174,6 +179,11 @@ export class TesseractEngine implements PlanTextEngine {
   /**
    * TSV to readings.
    *
+   * `page_num` counts from one, not from zero. Reading it as an index is an
+   * off-by-one that silently attributes every number to the crop before it —
+   * which still scores well on any measure that compares sets of strings, and
+   * is wrong about every single thing it measures.
+   *
    * Tesseract reports confidence as a percentage and uses -1 for "no word".
    * It is scaled to 0..1 here and clamped, because the seam promises 0..1 and
    * because a confidence of exactly 1 would claim certainty this engine never
@@ -187,8 +197,9 @@ export class TesseractEngine implements PlanTextEngine {
       if (c.length < 12) continue
       const text = c[11].trim()
       if (text === '') continue
-      const page = Number(c[1]) // 0-based index into the batch list
-      const crop = crops[page]
+      const page = Number(c[1])
+      if (!Number.isFinite(page) || page < 1) continue
+      const crop = crops[page - 1]
       if (!crop) continue
       const conf = Number(c[10])
       const left = Number(c[6])

@@ -14,6 +14,7 @@
     "analyze": "tsx src/node/cli.ts analyze",
     "bench": "tsx src/node/cli.ts bench",
     "ocr:benchmark": "tsx scripts/ocr-benchmark.ts",
+    "extract:spec": "tsx scripts/extract-spec.ts",
     "freeze": "tsx src/node/cli.ts freeze",
     "holdout": "tsx src/node/cli.ts holdout",
     "ui:dev": "vite",
