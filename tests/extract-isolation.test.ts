@@ -45,6 +45,11 @@ describe('§1 the extraction cannot read the answers', () => {
     expect(files.length).toBeGreaterThanOrEqual(8)
     expect(files.some((f) => f.includes('dimension-observations'))).toBe(true)
     expect(files.some((f) => f.includes('ocr/tesseract'))).toBe(true)
+    // The 06A modules are in the sweep by name, so a rename that moved one of
+    // them out of it would fail here rather than quietly stop being checked.
+    for (const name of ['door-symbols', 'room-topology', 'room-labels']) {
+      expect(files.some((f) => f.includes(name)), `${name} is not in the sweep`).toBe(true)
+    }
   })
 
   it('imports nothing from research/ or tests/', () => {
@@ -105,6 +110,19 @@ describe('§1 the extraction cannot read the answers', () => {
     )
     expect(candidate).not.toMatch(/\bg[wd]_[a-z]/)
     expect(candidate).not.toMatch(/marcowki/i)
+  })
+
+  it('takes no gold and no evaluation option through any 06A entry point', () => {
+    // §15 as a shape argument rather than a behavioural one: the door
+    // detector, the topology and the label reader are given a raster, a scale
+    // and the pipeline's own configuration, and there is nowhere in any of
+    // their signatures for an answer to be passed in.
+    for (const name of ['door-symbols', 'room-topology', 'room-labels']) {
+      const file = extractionSources().find((f) => f.includes(name))!
+      const source = readFileSync(file, 'utf8')
+      expect(source, name).not.toMatch(/\bGold\b|goldWall|goldRoom|goldOpening|evaluate/i)
+      expect(source, name).not.toMatch(/notionalEdge|positionTolerance|majorWall/)
+    }
   })
 })
 

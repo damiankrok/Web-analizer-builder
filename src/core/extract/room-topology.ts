@@ -8,8 +8,8 @@
  *
  *   1. **A logical host wall.** The two collinear pieces either side of one
  *      doorway are one wall. It runs the length of both of them and the
- *      opening between them, and it is that whole length that the gold means
- *      by "this wall".
+ *      opening between them, and it is that whole length that anyone reading
+ *      the drawing means by "this wall".
  *
  *   2. **Physical fabric.** There is no wall material *in* the doorway. No
  *      length reported as material may include it, ever, and §13 is explicit
