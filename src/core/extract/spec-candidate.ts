@@ -27,7 +27,7 @@
  * PORT_DIRECT (Kotlin).
  */
 import type { DimensionObservation } from './dimension-observations.js'
-import type { PlanModel, WallRun, RoomRegion, RoomAdjacency } from './plan-model.js'
+import type { PlanModel, WallRun, RoomRegion, RoomAdjacency, OpeningClass } from './plan-model.js'
 
 /**
  * The frame a candidate's metres are in.
@@ -63,6 +63,15 @@ export type CandidateOpening = {
   toM: number
   widthM: number
   kind: 'DOORWAY' | 'WIDE'
+  /**
+   * What the drawing says is in the opening. `UNKNOWN_GAP` until evidence
+   * moves it, never the other way round (§8).
+   */
+  class: OpeningClass
+  /** The door observation that classified it, when one did. */
+  doorId?: string
+  classConfidence: number
+  why: string
 }
 
 export type CandidateWall = {
@@ -267,6 +276,10 @@ export function buildSpecCandidate(
               toM: along(o.toPx),
               widthM: toM(o.lengthPx),
               kind: o.kind,
+              class: o.class,
+              ...(o.doorId === undefined ? {} : { doorId: o.doorId }),
+              classConfidence: o.classConfidence,
+              why: o.why,
             })),
             centreM: across(run.centrePx),
             confidence: runConfidence(run),

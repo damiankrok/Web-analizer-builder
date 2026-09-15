@@ -76,6 +76,22 @@ export const DEFAULT_PLAN_MODEL: PlanModelOptions = {
   maxJunctionReachM: 1.2,
 }
 
+/**
+ * What an opening in a wall line has been made of.
+ *
+ * `DOOR` is a stretch a door symbol was actually found across (§8): a swing
+ * arc, a leaf, or both, hinged on this wall. `OPEN_PASSAGE` is a stretch the
+ * drawing shows as open between two interior spaces with no door drawn in it.
+ * `EXTERIOR_OPENING` is an opening in a wall with outside on one side.
+ * `UNKNOWN_GAP` is the honest default: material stops here and nothing in the
+ * drawing says why.
+ *
+ * §8 is explicit that not every gap becomes a DOOR and that insufficient
+ * evidence must stay unresolved, so `UNKNOWN_GAP` is what an opening is until
+ * evidence moves it, and never the other way round.
+ */
+export type OpeningClass = 'DOOR' | 'OPEN_PASSAGE' | 'EXTERIOR_OPENING' | 'UNKNOWN_GAP'
+
 /** A stretch of one wall line with no material in it. */
 export type WallOpening = {
   fromPx: number
@@ -87,6 +103,14 @@ export type WallOpening = {
    * width, not a claim about what is in it.
    */
   kind: 'DOORWAY' | 'WIDE'
+  /** What the drawing says is in it; see `OpeningClass`. */
+  class: OpeningClass
+  /** The door observation that classified it, when one did. */
+  doorId?: string
+  /** 0..1 in the classification, not in the geometry. */
+  classConfidence: number
+  /** Why it was classified the way it was. */
+  why: string
 }
 
 export type WallRun = {
@@ -182,6 +206,9 @@ export function mergeWallRuns(
           toPx: piece.fromPx - 1,
           lengthPx: gap - 1,
           kind: gap - 1 <= opts.doorwayM * 100 * pxPerCm ? 'DOORWAY' : 'WIDE',
+          class: 'UNKNOWN_GAP',
+          classConfidence: 0,
+          why: 'material stops here; nothing has said why',
         })
         current.push({ fromPx: piece.fromPx, toPx: piece.toPx })
       }
@@ -254,6 +281,9 @@ export function joinAtJunctions(
           toPx: s2.toPx,
           lengthPx: s2.toPx - s2.fromPx + 1,
           kind: s2.toPx - s2.fromPx + 1 <= doorwayPx ? ('DOORWAY' as const) : ('WIDE' as const),
+          class: 'UNKNOWN_GAP' as const,
+          classConfidence: 0,
+          why: 'material stops here; nothing has said why',
         })),
     }
   })

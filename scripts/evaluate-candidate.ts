@@ -65,6 +65,38 @@ for (const { storey, level } of pairs) {
     `  doors      ${e.doors.detected} detected + ${e.doors.unresolved} explicitly unresolved of ` +
       `${e.doors.goldDoors} = ${(e.doors.rate * 100).toFixed(1)}%`,
   )
+  const d = e.decomposition
+  console.log(`  --- §13 decomposition of ${d.goldLengthM.toFixed(2)} m of major gold wall`)
+  console.log(
+    `      the gold says ${d.goldOpeningM.toFixed(2)} m of that is an opening, leaving ${d.goldFabricM.toFixed(2)} m of material`,
+  )
+  console.log(
+    `      candidate fabric        ${d.fabricM.toFixed(2)} m — ${((d.fabricM / d.goldLengthM) * 100).toFixed(1)}% of the gold length, ` +
+      `${(d.fabricOfGoldFabric * 100).toFixed(1)}% of the gold material`,
+  )
+  console.log(
+    `      logical host wall       ${d.logicalM.toFixed(2)} m = ${(d.logicalCoverage * 100).toFixed(1)}% — fabric plus the openings this wall accounts for`,
+  )
+  console.log(
+    `      host extent ceiling     ${d.hostExtentM.toFixed(2)} m = ${(d.hostExtentCoverage * 100).toFixed(1)}% — what the logical figure would be if every gap were accounted for`,
+  )
+  console.log(
+    `      fabric across a gold opening ${d.fabricAcrossGoldOpeningM.toFixed(2)} m; of the gold's opening span ${d.openingAgreedM.toFixed(2)} m is reported as an opening`,
+  )
+  console.log(
+    `      no candidate wall reaches ${d.missingM.toFixed(2)} m at all; ${d.trulyMissing} gold walls are missing outright, ` +
+      `${d.fragmentedButCorrect} are carried in pieces but carried`,
+  )
+  for (const r of d.rows
+    .filter((x) => x.goldLengthM >= 0.6)
+    .sort((a, b) => a.logicalM / a.goldLengthM - b.logicalM / b.goldLengthM)) {
+    console.log(
+      `      ${r.goldId.padEnd(22)} gold ${r.goldLengthM.toFixed(2)} m (open ${r.goldOpeningM.toFixed(2)}), ` +
+        `fabric ${r.fabricM.toFixed(2)}, logical ${r.logicalM.toFixed(2)}, extent ${r.hostExtentM.toFixed(2)}, ` +
+        `${r.hostCount} host${r.hostCount === 1 ? '' : 's'}, ${r.missingM.toFixed(2)} m unreached`,
+    )
+  }
+
   const worst = e.walls.rows
     .filter((r) => r.goldLengthM >= 0.6)
     .sort((a, b) => a.matchedM / a.goldLengthM - b.matchedM / b.goldLengthM)

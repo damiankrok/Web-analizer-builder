@@ -140,6 +140,51 @@ export type WallCoverage = {
   candidateIds: string[]
 }
 
+/**
+ * Where a gold wall's length went — §13 of the 06A brief.
+ *
+ * Stage 06 reported one number per gold wall: how much of it a candidate's
+ * *solid* stretches covered. That number cannot say whether the rest is a
+ * doorway the drawing shows, a wall the extraction missed, or a wall it found
+ * in pieces, and those are three different defects with three different fixes.
+ * So each is measured on its own and none is allowed to stand in for another.
+ *
+ * The distinction §3 of the brief insists on runs right through here:
+ *
+ *   - `fabricM` is material. A doorway is never in it, and inventing fabric
+ *     across a source-open stretch shows up as `fabricAcrossGoldOpeningM`
+ *     rather than as a better score.
+ *   - `logicalM` is the host wall: its fabric *plus* the openings it has
+ *     actually accounted for — a stretch the extraction says is a door or a
+ *     passage in this wall. An opening it cannot explain (`UNKNOWN_GAP`) is
+ *     not in it, so bridging arbitrary gaps cannot raise it.
+ *   - `hostExtentM` is the whole extent of every candidate wall on this line,
+ *     explained or not. It is the ceiling `logicalM` could reach if every gap
+ *     were accounted for, and is reported to make that headroom visible.
+ */
+export type WallDecomposition = {
+  goldId: string
+  goldLengthM: number
+  /** Of the gold length, what the gold itself says is an opening. */
+  goldOpeningM: number
+  /** Gold length that is material: `goldLengthM - goldOpeningM`. */
+  goldFabricM: number
+  /** Gold *fabric* covered by candidate material. */
+  fabricM: number
+  /** Gold length covered by candidate fabric plus accounted-for openings. */
+  logicalM: number
+  /** Gold length covered by any candidate wall's extent, accounted for or not. */
+  hostExtentM: number
+  /** Candidate material lying across a stretch the gold says is open. */
+  fabricAcrossGoldOpeningM: number
+  /** Gold opening span the candidate also reports as an opening. */
+  openingAgreedM: number
+  /** Gold length no candidate wall reaches at all. */
+  missingM: number
+  /** How many distinct candidate walls carry this gold wall. */
+  hostCount: number
+}
+
 export type CandidateEvaluation = {
   storey: string
   alignment: { dx: number; dz: number }
@@ -149,6 +194,30 @@ export type CandidateEvaluation = {
     matchedM: number
     coverage: number
     rows: WallCoverage[]
+  }
+  /** §13: the same failure, taken apart. Major gold walls only. */
+  decomposition: {
+    goldLengthM: number
+    goldOpeningM: number
+    goldFabricM: number
+    /** Stage 06's number: material over the whole gold length. */
+    fabricM: number
+    /** Material over the gold length the gold says is material. */
+    fabricOfGoldFabric: number
+    /** §14's number: fabric plus openings the extraction accounted for. */
+    logicalM: number
+    logicalCoverage: number
+    /** The ceiling logicalM could reach with every gap accounted for. */
+    hostExtentM: number
+    hostExtentCoverage: number
+    fabricAcrossGoldOpeningM: number
+    openingAgreedM: number
+    missingM: number
+    /** Gold walls carried by more than one candidate wall, but fully carried. */
+    fragmentedButCorrect: number
+    /** Gold walls no candidate wall reaches over more than a tenth of them. */
+    trulyMissing: number
+    rows: WallDecomposition[]
   }
   /**
    * Candidate fabric lying across a stretch the gold says is open. §21 forbids
@@ -241,6 +310,96 @@ export function evaluateCandidate(
   const major = rows.filter((r) => r.goldLengthM >= opts.majorWallM)
   const goldLengthM = major.reduce((n, r) => n + r.goldLengthM, 0)
   const matchedM = major.reduce((n, r) => n + r.matchedM, 0)
+
+  // --- §13: the same length, taken apart
+  const decompRows: WallDecomposition[] = []
+  for (const g of goldWalls) {
+    const goldGaps = goldOpenings
+      .filter((o) => o.wallId === g.id)
+      .map((o) => [Math.max(o.fromM, g.fromM), Math.min(o.toM, g.toM)] as [number, number])
+      .filter(([a, b]) => b > a)
+    const fabric: Array<[number, number]> = []
+    const logical: Array<[number, number]> = []
+    const extent: Array<[number, number]> = []
+    const acrossGold: Array<[number, number]> = []
+    const openingAgreed: Array<[number, number]> = []
+    const ids: string[] = []
+    for (const w of walls) {
+      if (w.axis !== g.axis) continue
+      const s = shifted(w)
+      if (Math.abs(s.centre - g.atM) > opts.positionToleranceM) continue
+      const clipped = overlapOf(s.from, s.to, g.fromM, g.toM)
+      if (clipped <= 0) continue
+      if (!ids.includes(w.id)) ids.push(w.id)
+      extent.push([Math.max(s.from, g.fromM), Math.min(s.to, g.toM)])
+      for (const piece of w.openings.length === 0 ? [{ fromM: s.from, toM: s.to }] : solidPieces(w, s)) {
+        const o = overlapOf(piece.fromM, piece.toM, g.fromM, g.toM)
+        if (o <= 0) continue
+        const span: [number, number] = [Math.max(piece.fromM, g.fromM), Math.min(piece.toM, g.toM)]
+        fabric.push(span)
+        logical.push(span)
+        for (const [ga, gb] of goldGaps) {
+          if (overlapOf(span[0], span[1], ga, gb) > 0) {
+            acrossGold.push([Math.max(span[0], ga), Math.min(span[1], gb)])
+          }
+        }
+      }
+      // An opening the extraction accounted for is part of the host wall; one
+      // it cannot explain is not, so a bridged gap of unknown provenance can
+      // never raise the logical figure (§8, §9).
+      const shift = s.from - Math.min(w.fromM, w.toM)
+      for (const op of w.openings) {
+        const from = Math.min(op.fromM, op.toM) + shift
+        const to = Math.max(op.fromM, op.toM) + shift
+        if (overlapOf(from, to, g.fromM, g.toM) <= 0) continue
+        const span: [number, number] = [Math.max(from, g.fromM), Math.min(to, g.toM)]
+        if (op.class === 'DOOR' || op.class === 'OPEN_PASSAGE') logical.push(span)
+        for (const [ga, gb] of goldGaps) {
+          if (overlapOf(span[0], span[1], ga, gb) > 0) {
+            openingAgreed.push([Math.max(span[0], ga), Math.min(span[1], gb)])
+          }
+        }
+      }
+    }
+    const goldLength = g.toM - g.fromM
+    const hostExtentM = unionLength(extent)
+    decompRows.push({
+      goldId: g.id,
+      goldLengthM: goldLength,
+      goldOpeningM: unionLength(goldGaps),
+      goldFabricM: goldLength - unionLength(goldGaps),
+      fabricM: unionLength(fabric),
+      logicalM: unionLength(logical),
+      hostExtentM,
+      fabricAcrossGoldOpeningM: unionLength(acrossGold),
+      openingAgreedM: unionLength(openingAgreed),
+      missingM: goldLength - hostExtentM,
+      hostCount: ids.length,
+    })
+  }
+  const majorDecomp = decompRows.filter((r) => r.goldLengthM >= opts.majorWallM)
+  const sum = (f: (r: WallDecomposition) => number): number => majorDecomp.reduce((n, r) => n + f(r), 0)
+  const decompGoldLengthM = sum((r) => r.goldLengthM)
+  const decompLogicalM = sum((r) => r.logicalM)
+  const decompHostExtentM = sum((r) => r.hostExtentM)
+  const decomposition: CandidateEvaluation['decomposition'] = {
+    goldLengthM: decompGoldLengthM,
+    goldOpeningM: sum((r) => r.goldOpeningM),
+    goldFabricM: sum((r) => r.goldFabricM),
+    fabricM: sum((r) => r.fabricM),
+    fabricOfGoldFabric:
+      sum((r) => r.goldFabricM) === 0 ? 0 : (sum((r) => r.fabricM) - sum((r) => r.fabricAcrossGoldOpeningM)) / sum((r) => r.goldFabricM),
+    logicalM: decompLogicalM,
+    logicalCoverage: decompGoldLengthM === 0 ? 0 : decompLogicalM / decompGoldLengthM,
+    hostExtentM: decompHostExtentM,
+    hostExtentCoverage: decompGoldLengthM === 0 ? 0 : decompHostExtentM / decompGoldLengthM,
+    fabricAcrossGoldOpeningM: sum((r) => r.fabricAcrossGoldOpeningM),
+    openingAgreedM: sum((r) => r.openingAgreedM),
+    missingM: sum((r) => r.missingM),
+    fragmentedButCorrect: majorDecomp.filter((r) => r.hostCount > 1 && r.hostExtentM >= 0.9 * r.goldLengthM).length,
+    trulyMissing: majorDecomp.filter((r) => r.hostExtentM < 0.1 * r.goldLengthM).length,
+    rows: decompRows,
+  }
 
   // --- fabric across an opening the source shows as open
   const invented: CandidateEvaluation['invented'] = { count: 0, totalM: 0, worst: [] }
@@ -351,6 +510,7 @@ export function evaluateCandidate(
     storey,
     alignment,
     walls: { goldCount: major.length, goldLengthM, matchedM, coverage: goldLengthM === 0 ? 0 : matchedM / goldLengthM, rows },
+    decomposition,
     invented,
     adjacency: {
       goldEdges: goldEdges.size,
