@@ -536,7 +536,11 @@ export function extractShell(
   }
 
   // ---- §17, §18, §19: the elevations
-  const facades = planFacades(candidate.storeys, options.facadeExtraction)
+  const facades = planFacades(
+    candidate.storeys,
+    extentX && extentZ ? { x: extentX, z: extentZ } : null,
+    options.facadeExtraction,
+  )
   const elevationAssets = pkg.assets.filter((a) => a.roles?.document === 'ELEVATION')
   const silhouettes = new Map<string, FacadeSilhouette>()
   const openingsByAsset = new Map<string, FacadeOpening[]>()
@@ -727,6 +731,8 @@ export function extractShell(
     elevationRecords.push({
       assetId: asset.id,
       declaredView: view,
+      solvedSide: null,
+      matchedOpenings: 0,
       solvedDirection: null,
       directionAgreesWithDeclaredView: true,
       pixelsPerMetreX: pixelsPerMetre,
@@ -761,11 +767,30 @@ export function extractShell(
 
   // ---- §7, §20: assign facades and match openings
   const tH = Date.now()
+  /**
+   * Which sides each elevation can be of, before its openings are consulted.
+   *
+   * The section fixes the ridge's axis, and the skyline shape says whether an
+   * elevation is looking along that ridge or across it. That is two bits of
+   * source evidence and it halves the search — but more to the point it
+   * removes the failure where an entrance elevation is assigned to a side wall
+   * because seven of its openings could be made to line up there.
+   */
+  const admissibleFor = (shape: SkylineShape): FacadeSide[] | null => {
+    if (sectionAxis === null) return null
+    // A gable end is seen looking along the ridge; the ridge runs along the
+    // axis the section does *not* cut across, so a gable-end facade's own
+    // along-axis is the one the section cuts across.
+    if (shape.kind === 'APEX') return sectionAxis === 'X' ? ['MIN_Z', 'MAX_Z'] : ['MIN_X', 'MAX_X']
+    if (shape.kind === 'LEVEL_TOP') return sectionAxis === 'X' ? ['MIN_X', 'MAX_X'] : ['MIN_Z', 'MAX_Z']
+    return null
+  }
   const assignment = assignFacades(
     elevationRecords.map((e) => ({
       assetId: e.assetId,
       declaredView: e.declaredView,
       openings: alongRaw.get(e.assetId) ?? [],
+      admissible: admissibleFor(e.silhouette.shape),
     })),
     facades,
     options.openingMatchToleranceM,
@@ -789,6 +814,15 @@ export function extractShell(
   const roofOpenings: CandidateRoofOpening[] = []
   const facadeFeatures: CandidateFacadeFeature[] = []
   const chimneys: CandidateChimney[] = []
+  type StackSighting = {
+    match: ReturnType<typeof matchStacks>[number]
+    view: string
+    axis: 'X' | 'Z' | null
+    assetId: string
+    fromM: number
+    toM: number
+  }
+  const stackSightings: StackSighting[] = []
   const tI = Date.now()
   const voids = planVoids(candidate.storeys, options.shellFeatures)
 
@@ -804,8 +838,25 @@ export function extractShell(
     const facade = facades.find((f) => f.side === assigned?.side) ?? null
     const corr = assigned?.correspondence ?? null
     record.solvedDirection = corr?.direction ?? null
+    record.solvedSide = assigned?.side ?? null
+    record.matchedOpenings = corr?.matches.length ?? 0
     record.horizontalMethod = corr ? 'OPENING_CORRESPONDENCE' : 'UNRESOLVED'
-    record.colAtZero = record.colAtZero
+    if ((corr?.matches.length ?? 0) < 2) {
+      conflicts.push({
+        id: `cs${conflicts.length}`,
+        kind: 'ELEVATION_VIEW_IDENTITY_UNRESOLVED',
+        observations: [
+          `${record.declaredView} was placed on the ${assigned?.side ?? 'unknown'} facade with ` +
+            `${corr?.matches.length ?? 0} opening(s) lining up with the plans`,
+          'the roof orientation admits it and no other elevation wanted that facade',
+        ],
+        unresolved:
+          'this facade was assigned by elimination rather than by evidence. Which of the two remaining sides it is, is ' +
+          'not something one or zero matched openings settle (§7)',
+        evidence: [evidenceOf(asset, 'the solved assignment')],
+        confidence: 0.35,
+      })
+    }
     if (facade) record.notes.push(`solved onto the ${facade.side} facade${corr ? ` with ${corr.matches.length} openings matched` : ' with no correspondence'}`)
 
     const toAlong = (m: number): number => (corr ? corr.direction * m * corr.scale + corr.offsetM : m)
@@ -941,7 +992,8 @@ export function extractShell(
       }
     }
 
-    // §23: stacks above the fitted roofline.
+    // §23: stacks above the fitted roofline, collected now and turned into
+    // chimneys once every elevation has been seen.
     const stacks = findStacks(
       record.assetId,
       record.declaredView,
@@ -951,6 +1003,7 @@ export function extractShell(
       silhouette.maxX,
       reg.pixelsPerMetreY,
       reg.rowAtZero,
+      eaveM,
       options.shellFeatures,
     )
     const alongOfCol = (px: number): number => toAlong((px - record.colAtZero) / reg.pixelsPerMetreY)
@@ -958,40 +1011,17 @@ export function extractShell(
       stacks,
       voids,
       (v) => (facade?.alongAxis === 'X' ? (v.box.x0 + v.box.x1) / 2 : (v.box.z0 + v.box.z1) / 2),
-      (s) => alongOfCol((s.fromPx + s.toPx) / 2),
+      (st) => alongOfCol((st.fromPx + st.toPx) / 2),
       options.shellFeatures,
     )) {
-      chimneys.push({
-        id: `ch${chimneys.length}`,
-        planFootprint: m.planVoid ? m.planVoid.box : null,
-        planStorey: m.planVoid ? m.planVoid.storey : null,
-        stack: {
-          view: record.declaredView,
-          alongFromM: alongOfCol(m.stack.fromPx),
-          alongToM: alongOfCol(m.stack.toPx),
-          topLevelM: m.stack.topLevelM,
-        },
-        roofPenetrationLevelM: null,
-        crossSource: m.crossSource,
-        evidence: [evidenceOf(asset, `a stack ${m.stack.widthM.toFixed(2)} m wide rising ${m.stack.riseM.toFixed(2)} m above the roofline`)],
-        confidence: m.stack.confidence,
-        why: m.why,
+      stackSightings.push({
+        match: m,
+        view: record.declaredView,
+        axis: facade?.alongAxis ?? null,
+        assetId: record.assetId,
+        fromM: Math.min(alongOfCol(m.stack.fromPx), alongOfCol(m.stack.toPx)),
+        toM: Math.max(alongOfCol(m.stack.fromPx), alongOfCol(m.stack.toPx)),
       })
-      if (m.crossSource !== 'MATCHED') {
-        conflicts.push({
-          id: `cs${conflicts.length}`,
-          kind: m.planVoid === null ? 'CHIMNEY_FOOTPRINT_VS_STACK' : 'CHIMNEY_LOWER_SHAFT_UNRESOLVED',
-          observations: [
-            `the ${record.declaredView} elevation shows a stack ${m.stack.widthM.toFixed(2)} m wide at ${alongOfCol((m.stack.fromPx + m.stack.toPx) / 2).toFixed(2)} m along the facade`,
-            m.planVoid
-              ? `the nearest plan void is ${m.residualM?.toFixed(2)} m away, in the ${m.planVoid.storey} plan`
-              : 'no plan shows a void small enough to be its flue',
-          ],
-          unresolved: m.why,
-          evidence: [evidenceOf(asset, m.stack.id)],
-          confidence: 0.45,
-        })
-      }
     }
 
     // §24: bands on the facade, and the depth an elevation cannot measure.
@@ -1029,6 +1059,71 @@ export function extractShell(
           confidence: 0.4,
         })
       }
+    }
+  }
+
+  /**
+   * ---- §23: one stack seen from three sides is one stack.
+   *
+   * Each elevation gives a chimney's position along one plan axis and nothing
+   * about the other, so two stacks that share a column of x are one silhouette
+   * on the entrance elevation and two on the side. Counting sightings would
+   * make that four chimneys. What is counted instead is *clusters within one
+   * axis*, and the axis that resolves the most of them is the one that says how
+   * many there are — which is the same reasoning by which a reader of these
+   * drawings arrives at the answer.
+   */
+  const clusterAxis = (axis: 'X' | 'Z'): StackSighting[][] => {
+    const here = stackSightings.filter((s2) => s2.axis === axis).sort((a, b) => a.fromM - b.fromM)
+    const out: StackSighting[][] = []
+    for (const s2 of here) {
+      const last = out[out.length - 1]
+      if (last && s2.fromM <= Math.max(...last.map((x) => x.toM)) + 0.5) last.push(s2)
+      else out.push([s2])
+    }
+    return out
+  }
+  const clustersX = clusterAxis('X')
+  const clustersZ = clusterAxis('Z')
+  const resolving = clustersZ.length > clustersX.length ? clustersZ : clustersX
+  const otherAxis = resolving === clustersZ ? clustersX : clustersZ
+  for (const cluster of resolving) {
+    const best = cluster.reduce((a, b) => (b.match.stack.topLevelM > a.match.stack.topLevelM ? b : a))
+    const matchedVoid = cluster.find((c) => c.match.planVoid !== null)?.match ?? null
+    chimneys.push({
+      id: `ch${chimneys.length}`,
+      planFootprint: matchedVoid?.planVoid ? matchedVoid.planVoid.box : null,
+      planStorey: matchedVoid?.planVoid ? matchedVoid.planVoid.storey : null,
+      stack: {
+        view: best.view,
+        alongFromM: best.fromM,
+        alongToM: best.toM,
+        topLevelM: best.match.stack.topLevelM,
+      },
+      roofPenetrationLevelM: null,
+      crossSource: matchedVoid ? 'MATCHED' : 'UNRESOLVED',
+      evidence: cluster.map((c) => ({ assetId: c.assetId, role: `ELEVATION:${c.view}`, locator: c.match.stack.id })),
+      confidence: Math.min(0.85, 0.4 + 0.15 * cluster.length + (matchedVoid ? 0.2 : 0)),
+      why:
+        `seen on ${cluster.length} elevation(s) (${cluster.map((c) => c.view).join(', ')}) at ` +
+        `${best.fromM.toFixed(2)}..${best.toM.toFixed(2)} m along the facade, topping out at ${best.match.stack.topLevelM.toFixed(2)} m. ` +
+        `${otherAxis.length} cluster(s) on the perpendicular axis; the axis that resolves the most is the one counted. ` +
+        (matchedVoid ? matchedVoid.why : 'no plan void lines up with it on this axis'),
+    })
+    if (!matchedVoid) {
+      conflicts.push({
+        id: `cs${conflicts.length}`,
+        kind: 'CHIMNEY_LOWER_SHAFT_UNRESOLVED',
+        observations: [
+          `a stack at ${best.fromM.toFixed(2)}..${best.toM.toFixed(2)} m along the ${best.view} facade, topping out at ${best.match.stack.topLevelM.toFixed(2)} m`,
+          'no plan void small enough to be its flue lines up under it on this axis',
+        ],
+        unresolved:
+          'whether the shaft continues to a flue the plans draw somewhere else is not something an elevation and a ' +
+          'plan can settle between them. Joining them would assert a route no drawing shows (§23)',
+        evidence: cluster.map((c) => ({ assetId: c.assetId, role: `ELEVATION:${c.view}`, locator: c.match.stack.id })),
+        confidence: 0.45,
+      })
     }
   }
 

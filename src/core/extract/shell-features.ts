@@ -31,7 +31,9 @@ import type { CandidateStorey } from './spec-candidate.js'
 import type { FacadeOpening } from './facade-openings.js'
 
 export type ShellFeatureOptions = {
-  /** A stack is narrower than this, metres. */
+  /** A stack is at least this wide, metres: a flue has a flue in it. */
+  minStackWidthM: number
+  /** …and narrower than this. */
   maxStackWidthM: number
   /** …and rises at least this far above the roofline before it is one. */
   minStackRiseM: number
@@ -47,11 +49,14 @@ export type ShellFeatureOptions = {
   minRecessWidthM: number
   /** How much of a candidate's width another wall may stand in front of, 0..1. */
   maxOccludedFraction: number
+  /** How close to a recess's end a return must start, metres. */
+  returnToleranceM: number
   /** A rooflight is at least this far above the eave to be in the roof and not the wall. */
   minRooflightAboveEaveM: number
 }
 
 export const DEFAULT_SHELL_FEATURES: ShellFeatureOptions = {
+  minStackWidthM: 0.25,
   maxStackWidthM: 1.6,
   minStackRiseM: 0.25,
   stackMatchToleranceM: 1.0,
@@ -60,6 +65,7 @@ export const DEFAULT_SHELL_FEATURES: ShellFeatureOptions = {
   maxRecessDepthM: 4.5,
   minRecessWidthM: 1.0,
   maxOccludedFraction: 0.25,
+  returnToleranceM: 0.8,
   minRooflightAboveEaveM: 0.15,
 }
 
@@ -92,6 +98,18 @@ export type StackObservation = {
  * only find it by comparing the skyline against something the chimney did not
  * contribute to. The fitted lines are exactly that, because a thirty-pixel
  * stack never wins enough support to become one.
+ *
+ * The lines are **extrapolated** rather than used only where they were
+ * supported, and that is not a detail either. A stack interrupts the skyline,
+ * so the fit on either side of it stops at its edge and the columns the stack
+ * occupies are the ones with no fitted line over them — precisely the columns
+ * that need one. On project A's entrance elevation the gable's two slopes are
+ * supported over x 376..683 and the chimney stands at x 700..740, so a test
+ * that needs support at x finds nothing at all.
+ *
+ * Only the best-supported lines are extrapolated, because a line fitted to
+ * thirty samples of a tree is not a roof and extending it would put a roof
+ * wherever the tree was.
  */
 export function findStacks(
   assetId: string,
@@ -102,15 +120,22 @@ export function findStacks(
   toX: number,
   pixelsPerMetre: number,
   rowAtZero: number,
+  /** A stack terminates above the roof, so anything topping out below the eave is not one. */
+  eaveLevelM: number | null,
   opts: ShellFeatureOptions = DEFAULT_SHELL_FEATURES,
 ): StackObservation[] {
   if (lines.length === 0 || !(pixelsPerMetre > 0)) return []
+  const primary = [...lines].sort((a, b) => b.inliers - a.inliers).slice(0, 2)
   const roofAt = (x: number): number | null => {
     let best: number | null = null
-    for (const l of lines) {
-      if (x < l.fromX - 2 || x > l.toX + 2) continue
+    for (const l of primary) {
+      // Extrapolated, but only as far as the line is itself supported: a
+      // hundred-pixel plane does not describe the roof five hundred pixels
+      // away from where it was seen.
+      const reach = Math.max(40, (l.toX - l.fromX) * 1.5)
+      if (x < l.fromX - reach || x > l.toX + reach) continue
       const y = l.intercept + l.slope * x
-      if (best === null || y < best) best = y
+      if (best === null || y > best) best = y
     }
     return best
   }
@@ -133,11 +158,16 @@ export function findStacks(
     const b = fromX + i - 1
     start = -1
     const widthM = (b - a + 1) / pixelsPerMetre
-    if (widthM > opts.maxStackWidthM || widthM < 0.1) continue
+    if (widthM > opts.maxStackWidthM || widthM < opts.minStackWidthM) continue
     let topRowPx = Number.POSITIVE_INFINITY
     for (let x = a; x <= b; x++) if (skyline[x] >= 0) topRowPx = Math.min(topRowPx, skyline[x])
     const roof = roofAt((a + b) / 2)
     if (!Number.isFinite(topRowPx) || roof === null) continue
+    const topLevelM = (rowAtZero - topRowPx) / pixelsPerMetre
+    // A chimney finishes above the roof it passes through. Something narrow
+    // standing proud of a roof slope near its eave is a downpipe, a corner of
+    // a tree, or the edge of the render — not a stack.
+    if (eaveLevelM !== null && topLevelM < eaveLevelM) continue
     out.push({
       id: `stack${out.length}`,
       assetId,
@@ -147,7 +177,7 @@ export function findStacks(
       topRowPx,
       widthM,
       riseM: (roof - topRowPx) / pixelsPerMetre,
-      topLevelM: (rowAtZero - topRowPx) / pixelsPerMetre,
+      topLevelM,
       confidence: 0.6,
       why:
         `${b - a + 1} px of silhouette standing ${((roof - topRowPx) / pixelsPerMetre).toFixed(2)} m above the fitted ` +
@@ -348,9 +378,42 @@ export function recessesFromPlan(
   inward: 1 | -1,
   opts: ShellFeatureOptions = DEFAULT_SHELL_FEATURES,
 ): RecessObservation[] {
+  /**
+   * A recess is bounded. Without this test a set-back wall is indistinguishable
+   * from the building simply being narrower there — an L-shaped plan reads as a
+   * four-metre recess, which on project A is exactly what happened. What makes
+   * a recess a recess is that it has *returns*: walls running back from the
+   * facade plane to the set-back wall at each of its ends. The gold fixture
+   * models them under that name for the same reason.
+   */
+  const hasReturn = (
+    perpendicular: CandidateStorey['walls'],
+    atM: number,
+    depthM: number,
+  ): boolean =>
+    perpendicular.some((w) => {
+      const near = inward > 0 ? Math.min(w.nearM, w.farM) : Math.max(w.nearM, w.farM)
+      const far = inward > 0 ? Math.max(w.nearM, w.farM) : Math.min(w.nearM, w.farM)
+      if (Math.abs(near - atM) > opts.returnToleranceM && Math.abs(far - atM) > opts.returnToleranceM) return false
+      const from = inward * (w.fromM - facadePlaneM)
+      const to = inward * (w.toM - facadePlaneM)
+      const lo = Math.min(from, to)
+      const hi = Math.max(from, to)
+      // It must reach from near the facade plane to near the set-back wall.
+      return lo <= opts.returnToleranceM && hi >= depthM - opts.returnToleranceM
+    })
+
   const out: RecessObservation[] = []
   for (const s of storeys) {
     const parallel = s.walls.filter((w) => w.axis === wallAxis)
+    if (parallel.length === 0) continue
+    // A storey that does not reach this facade cannot have a recess in it.
+    // Project A's attic stops where the garage wing begins, four metres behind
+    // the ground floor's east face; calling that a four-metre recess confuses
+    // a storey being smaller than the one under it with a hole in a wall.
+    const reach = parallel.map((w) => (inward > 0 ? Math.min(w.nearM, w.farM) : Math.max(w.nearM, w.farM)))
+    const closest = inward > 0 ? Math.min(...reach) : Math.max(...reach)
+    if (inward * (closest - facadePlaneM) > opts.minRecessDepthM) continue
     for (const wall of parallel) {
       const nearest = inward > 0 ? Math.min(wall.nearM, wall.farM) : Math.max(wall.nearM, wall.farM)
       const depthM = inward * (nearest - facadePlaneM)
@@ -373,6 +436,9 @@ export function recessesFromPlan(
         if (overlap > 0) occluded += overlap
       }
       if (occluded > widthM * opts.maxOccludedFraction) continue
+      const perpendicular = s.walls.filter((w) => w.axis !== wallAxis)
+      const returns = [hasReturn(perpendicular, wall.fromM, depthM), hasReturn(perpendicular, wall.toM, depthM)]
+      if (!returns[0] || !returns[1]) continue
       out.push({
         id: `recess${out.length}`,
         side,
@@ -383,9 +449,9 @@ export function recessesFromPlan(
         wallId: wall.id,
         confidence: 0.5,
         why:
-          `a ${widthM.toFixed(2)} m run of wall lying ${depthM.toFixed(2)} m behind the ${side} facade plane with nothing ` +
-          `of the building in front of ${((occluded / widthM) * 100).toFixed(0)}% of it, measured in the plan — which is ` +
-          'the only source here that can measure a depth at all',
+          `a ${widthM.toFixed(2)} m run of wall lying ${depthM.toFixed(2)} m behind the ${side} facade plane, with nothing ` +
+          `of the building in front of ${((occluded / widthM) * 100).toFixed(0)}% of it and a return at each end reaching ` +
+          'back from the facade plane. The depth is a plan measurement, which is the only kind that can measure one',
       })
     }
   }

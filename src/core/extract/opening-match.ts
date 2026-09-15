@@ -74,6 +74,17 @@ export const DEFAULT_FACADE_EXTRACTION: FacadeExtractionOptions = {
  */
 export function planFacades(
   storeys: readonly CandidateStorey[],
+  /**
+   * Where the building's four faces are, as the caller measured them.
+   *
+   * Passed in rather than taken as the minimum and maximum of the wall faces,
+   * because a floor-plan sheet carries marks outside the building and a band
+   * detector picks some of them up: on project A the raw maximum along Z is
+   * 19.66 m for a building that is fourteen and a half, and a facade plane put
+   * there makes every wall in the house look like the back of a five-metre
+   * recess.
+   */
+  extents: { x: { fromM: number; toM: number }; z: { fromM: number; toM: number } } | null,
   opts: FacadeExtractionOptions = DEFAULT_FACADE_EXTRACTION,
 ): PlanFacade[] {
   const walls: Array<{ wall: CandidateWall; storey: string }> = []
@@ -84,12 +95,14 @@ export function planFacades(
   const xFaces = walls.filter(({ wall }) => wall.axis === 'Z').flatMap(({ wall }) => faces(wall))
   const zFaces = walls.filter(({ wall }) => wall.axis === 'X').flatMap(({ wall }) => faces(wall))
   if (xFaces.length === 0 || zFaces.length === 0) return []
-  const extremes: Record<FacadeSide, number> = {
-    MIN_X: Math.min(...xFaces),
-    MAX_X: Math.max(...xFaces),
-    MIN_Z: Math.min(...zFaces),
-    MAX_Z: Math.max(...zFaces),
-  }
+  const extremes: Record<FacadeSide, number> = extents
+    ? { MIN_X: extents.x.fromM, MAX_X: extents.x.toM, MIN_Z: extents.z.fromM, MAX_Z: extents.z.toM }
+    : {
+        MIN_X: Math.min(...xFaces),
+        MAX_X: Math.max(...xFaces),
+        MIN_Z: Math.min(...zFaces),
+        MAX_Z: Math.max(...zFaces),
+      }
 
   const out: PlanFacade[] = []
   for (const side of FACADE_SIDES) {
@@ -192,7 +205,26 @@ export type FacadeAssignment = {
  * not have two fronts.
  */
 export function assignFacades(
-  elevations: ReadonlyArray<{ assetId: string; declaredView: string; openings: AlongPosition[] }>,
+  elevations: ReadonlyArray<{
+    assetId: string
+    declaredView: string
+    openings: AlongPosition[]
+    /**
+     * Which sides this elevation can possibly be of, from evidence that is not
+     * the opening correspondence.
+     *
+     * The strong one is the roof. The section says which axis it cuts across,
+     * so it says which axis the ridge runs along; an elevation whose skyline
+     * comes to an apex is looking along the ridge and can only be one of the
+     * two facades at the ends of it, and one whose skyline is level across the
+     * building is looking at the ridge side-on and can only be one of the
+     * other two. Measured on project A, correspondence alone assigns the
+     * entrance elevation to a side wall — seven openings can be made to line
+     * up on a facade with enough gaps in it — and this constraint is what
+     * stops it.
+     */
+    admissible: FacadeSide[] | null
+  }>,
   facades: readonly PlanFacade[],
   toleranceM: number,
 ): FacadeAssignment {
@@ -200,6 +232,7 @@ export function assignFacades(
   const scores = new Map<string, number>()
   for (const e of elevations) {
     for (const f of facades) {
+      if (e.admissible && !e.admissible.includes(f.side)) continue
       for (const c of scoreAgainstFacade(e.assetId, e.openings, f, toleranceM)) {
         const key = `${e.assetId}|${f.side}`
         const prev = best.get(key)
@@ -216,9 +249,13 @@ export function assignFacades(
   const permute = (remaining: FacadeSide[], chosen: FacadeSide[]): void => {
     if (chosen.length === elevations.length) {
       let total = 0
+      let admissible = true
       chosen.forEach((side, i) => {
-        total += scores.get(`${elevations[i].assetId}|${side}`) ?? 0
+        const e = elevations[i]
+        if (e.admissible && !e.admissible.includes(side)) admissible = false
+        total += scores.get(`${e.assetId}|${side}`) ?? 0
       })
+      if (!admissible) return
       if (bestAssignment === null || total > bestAssignment.total) bestAssignment = { order: [...chosen], total }
       return
     }

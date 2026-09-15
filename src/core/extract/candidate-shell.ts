@@ -184,6 +184,9 @@ export type CandidateElevation = {
   assetId: string
   /** The view the SourcePackage declares. */
   declaredView: string
+  /** Which side of the building it was solved onto, and how many openings settled it. */
+  solvedSide: string | null
+  matchedOpenings: number
   /** The direction the building's coordinate runs, as solved. */
   solvedDirection: 1 | -1 | null
   directionAgreesWithDeclaredView: boolean

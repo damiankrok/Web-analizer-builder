@@ -17,6 +17,7 @@
     "freeze": "tsx src/node/cli.ts freeze",
     "holdout": "tsx src/node/cli.ts holdout",
     "ocr:benchmark": "tsx scripts/ocr-benchmark.ts",
+    "shell:evaluate": "tsx scripts/evaluate-shell.ts",
     "shell:spec": "tsx scripts/shell-spec.ts",
     "source:package": "tsx src/node/cli.ts source:package",
     "standalone:build": "npm run standalone:bundle && vite build --config vite.standalone.config.ts && node scripts/build-artifact-page.mjs",
