@@ -1,16 +1,25 @@
-/** The A/B/C development projects (§3). */
+/** The development projects, and the one untouched holdout among them. */
 export type DevProject = {
-  key: 'A' | 'B' | 'C' | 'D'
+  key: 'A' | 'B' | 'C' | 'D' | 'E'
   slug: string
   name: string
   url: string
   /**
-   * `HISTORICAL_HOLDOUT_WEB01` marks a project that *was* a clean holdout for
-   * an earlier research stage and has been observed since. It cannot be
-   * presented as an untouched holdout again (§28), and keeping the distinction
-   * in the type is what stops it being quietly reused as one.
+   * `HISTORICAL_HOLDOUT_WEB01` / `_WEB02` mark a project that *was* a clean
+   * holdout for an earlier research stage and has been observed since. It
+   * cannot be presented as an untouched holdout again, and keeping the
+   * distinction in the type is what stops it being quietly reused as one.
+   *
+   * A holdout is spent the moment its extracted geometry has been looked at,
+   * whether or not anything was tuned on it. Exactly one project may carry
+   * `HOLDOUT` at a time.
    */
-  role: 'PRIMARY' | 'REGRESSION' | 'HOLDOUT' | 'HISTORICAL_HOLDOUT_WEB01'
+  role:
+    | 'PRIMARY'
+    | 'REGRESSION'
+    | 'HOLDOUT'
+    | 'HISTORICAL_HOLDOUT_WEB01'
+    | 'HISTORICAL_HOLDOUT_WEB02'
   description: string
 }
 
@@ -46,12 +55,23 @@ export const PROJECTS: readonly DevProject[] = [
     slug: 'D-holdout',
     name: 'Dom w kruszczykach 22',
     url: 'https://www.archon.pl/projekty-domow/projekt-dom-w-kruszczykach-22-md1827af5309ce',
+    role: 'HISTORICAL_HOLDOUT_WEB02',
+    description:
+      'The WEB-02 holdout. It was run twice under that freeze and its footprint, ridge, eave and ' +
+      'pitch were reported, and a missing-gable-wall defect was found and fixed against it, so it ' +
+      'has been observed and is no longer a clean holdout. Kept as a third regression project.',
+  },
+  {
+    key: 'E',
+    slug: 'E-holdout',
+    name: 'Dom w wisteriach 21',
+    url: 'https://www.archon.pl/projekty-domow/projekt-dom-w-wisteriach-21-m42a2875282921',
     role: 'HOLDOUT',
     description:
-      'The WEB-02 holdout, chosen before development began and not run until the freeze (§28, §29). ' +
-      'Single storey with a hipped roof — no usable attic, no flat-roofed wing — so it shares no ' +
-      'massing family with A or B. Selected on the presence of technical drawings alone; none of its ' +
-      'metric values were inspected.',
+      'The WEB-PIVOT-06 holdout, chosen before any Stage-06 implementation or tuning. Selected on ' +
+      'the presence of technical drawings alone: the page publishes a ground-floor plan, an attic ' +
+      'plan, a detailed (dimensioned) plan variant, elevations and a section. None of its metric ' +
+      'values have been inspected and none of its geometry has been transcribed.',
   },
 ]
 

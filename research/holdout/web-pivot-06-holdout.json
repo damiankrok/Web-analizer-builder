@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "web-pivot-06-holdout-1.0.0",
+  "stage": "STAGE_WEB_PIVOT_06_AUTOMATIC_FLOORPLAN_TO_SPEC",
+  "declaredAtCommit": "ce3bbbf76ed1efa19e87dae3698f5889fb7e38a6",
+  "declaredBefore": "any Stage-06 extraction code was written or tuned",
+  "holdout": {
+    "key": "E",
+    "slug": "E-holdout",
+    "name": "Dom w wisteriach 21",
+    "projectId": "m42a2875282921",
+    "canonicalUrl": "https://www.archon.pl/projekty-domow/projekt-dom-w-wisteriach-21-m42a2875282921",
+    "sourcePackageId": "pkg_153cb4240fa560e2",
+    "sourcePackageSchemaVersion": "3.0.0",
+    "sourcePackageHash": "153cb4240fa560e292c7b5fef3dd44a22c5d52058384ceee6b8281f4ec7872e8",
+    "documentHash": "b461103d48931d1489851743337ab7a31db9c4bbdd3cf22a794ebdb01884e66d"
+  },
+  "selectionBasis": {
+    "criterion": "presence of the drawing roles Stage 06 consumes, and nothing else",
+    "observed": [
+      "FLOOR_PLAN / GROUND / DIMENSIONED",
+      "FLOOR_PLAN / UPPER_ATTIC / DIMENSIONED",
+      "FLOOR_PLAN / GROUND / AREA_LABELS",
+      "FLOOR_PLAN / UPPER_ATTIC / AREA_LABELS",
+      "SECTION / ALL / CLEAN",
+      "ELEVATION x 4"
+    ],
+    "notObserved": [
+      "no plan image was decoded, rendered or measured",
+      "no printed dimension was read",
+      "no wall, room, door, stair, opening or roof value was transcribed",
+      "no footprint, area, storey height, ridge, eave or pitch figure was looked at"
+    ]
+  },
+  "rules": {
+    "tuning": "FORBIDDEN — no threshold, weight, tolerance or heuristic may be chosen against E",
+    "runs": "exactly one Stage-06 extraction run, after the code and config freeze",
+    "transcription": "FORBIDDEN — E gets no gold fixture"
+  },
+  "supersedes": {
+    "D": {
+      "name": "Dom w kruszczykach 22",
+      "reason": "spent as the WEB-02 holdout: run twice under that freeze, its footprint/ridge/eave/pitch reported, and a missing-gable-wall defect found and fixed against it",
+      "roleNow": "HISTORICAL_HOLDOUT_WEB02"
+    },
+    "C": {
+      "name": "Dom w kosaccach 44",
+      "reason": "spent as the WEB-01 holdout",
+      "roleNow": "HISTORICAL_HOLDOUT_WEB01"
+    }
+  }
+}
