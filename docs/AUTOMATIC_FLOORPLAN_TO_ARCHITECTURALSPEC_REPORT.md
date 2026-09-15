@@ -11,7 +11,7 @@ transcription anywhere in it, and no remote model of any kind.
 | | |
 | --- | --- |
 | starting HEAD | `ce3bbbf76ed1efa19e87dae3698f5889fb7e38a6` |
-| final HEAD | recorded in §26 below, after the last commit |
+| final HEAD | `4136d82` — this report; the last code commit is `c8de5f4`, which is what the freeze pins |
 | worktree at the start | clean, no unknown changes |
 
 Commits, in order:
@@ -22,6 +22,8 @@ Commits, in order:
 | `4ebb1bd` | §6 — the recogniser measured, and replaced |
 | `c66e8b1` | §7-§10 — dimension geometry, association, and the sheet's own scale |
 | `88d0fe0` | §11-§21 — walls, rooms, the candidate, and the gold evaluation |
+| `c8de5f4` | §23, §27 — the freeze, the one-shot holdout command, and the sheet |
+| `4136d82` | this report |
 
 ## 2. Branch
 
