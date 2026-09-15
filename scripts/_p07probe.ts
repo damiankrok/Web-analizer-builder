@@ -45,3 +45,29 @@ for (const o of obs) {
   console.log(`  ${o.status.padEnd(11)} row ${o.markerPx.y.toFixed(2)} ${o.association.padEnd(14)} value ${o.parsedLevelM === null ? '   none' : o.parsedLevelM.toFixed(3).padStart(7)} pred ${o.predictedLevelM?.toFixed(3) ?? '-'} hint ${o.semanticHint.padEnd(12)} conf ${o.confidence.toFixed(2)}`)
   console.log(`      ${o.why}`)
 }
+
+// --- roof
+import { analyseSectionRoof } from '../src/core/extract/section-roof.js'
+const roof = analyseSectionRoof(gray, res.inkThreshold, sol!.datumRow)
+console.log('\nROOF:')
+for (const n of roof.notes) console.log('  ' + n)
+const lv = (row: number) => ((sol!.datumRow - row) / sol!.pixelsPerMetre).toFixed(3)
+for (const e of roof.edges) console.log(`  ${e.id} ${e.kind} ${e.slopeDeg.toFixed(2)}deg x${e.fromX}..${e.toX} y ${(e.intercept + e.slope*e.fromX).toFixed(1)}..${(e.intercept + e.slope*e.toX).toFixed(1)} => ${lv(e.intercept + e.slope*e.fromX)}m..${lv(e.intercept + e.slope*e.toX)}m rms${e.rmsPx.toFixed(2)}`)
+if (roof.ridge) console.log(`  RIDGE at x${roof.ridge.x.toFixed(1)} row ${roof.ridge.y.toFixed(2)} => ${lv(roof.ridge.y)} m, pitches ${roof.ridge.leftPitchDeg.toFixed(2)} / ${roof.ridge.rightPitchDeg.toFixed(2)}`)
+for (const e of roof.eaves) console.log(`  eave ${e.edgeId} ${e.side} x${e.x.toFixed(0)} row ${e.y.toFixed(1)} => ${lv(e.y)} m`)
+for (const s of roof.soffits) console.log(`  soffit ${s.edgeId} thickness ${s.thicknessPx} px = ${(s.thicknessPx / sol!.pixelsPerMetre).toFixed(3)} m, rms ${s.rmsPx.toFixed(2)}`)
+
+// --- pitch callouts
+import { calloutsAlongLine, obliqueCalloutCrop, parsePitchText, DEFAULT_OBLIQUE_TEXT } from '../src/core/extract/oblique-text.js'
+import { DEFAULT_SECTION_ANNOTATIONS } from '../src/core/extract/section-annotations.js'
+import { pitchTextOptions } from '../src/core/extract/section-read.js'
+console.log('\nPITCH CALLOUTS:')
+for (const e of roof.edges.filter((x) => x.kind === 'PITCHED')) {
+  const cs = calloutsAlongLine(gray, e, DEFAULT_SECTION_ANNOTATIONS.regions, DEFAULT_OBLIQUE_TEXT)
+  console.log(`  ${e.id} (${e.pitchDeg.toFixed(2)}deg): ${cs.length} callouts`)
+  const crops = cs.map((c) => { const { gray: cg, scale } = obliqueCalloutCrop(gray, c); return { id: `${e.id}:${c.id}`, gray: cg, sourceBox: c.box, orientation: 'HORIZONTAL' as const, scale } })
+  for (const rd of engine.readBatch(crops, pitchTextOptions())) {
+    const c = cs.find((x) => `${e.id}:${x.id}` === rd.cropId)!
+    console.log(`    ${rd.cropId} "${rd.text}" c${rd.confidence.toFixed(2)} -> pitch ${parsePitchText(rd.text)} | at ${c.centre.x.toFixed(0)},${c.centre.y.toFixed(0)} off ${c.offsetPx.toFixed(1)} glyphs ${c.glyphs} box ${c.box.x0},${c.box.y0}..${c.box.x1},${c.box.y1}`)
+  }
+}
