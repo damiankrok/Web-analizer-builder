@@ -1,7 +1,7 @@
 {
   "schemaVersion": "web-pivot-07-holdout-1.0.0",
   "stage": "STAGE_WEB_PIVOT_07_AUTOMATIC_SECTION_ELEVATION_SPEC",
-  "declaredAtCommit": "PENDING",
+  "declaredAtCommit": "85a012f0d378659957ef233527758bb9c90be270",
   "declaredBefore": "any Stage-07 section, datum, roof, elevation, facade-opening or feature code was written",
   "holdout": {
     "key": "G",
