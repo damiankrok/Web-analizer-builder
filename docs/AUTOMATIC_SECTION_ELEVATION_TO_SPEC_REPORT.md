@@ -13,7 +13,8 @@
 | Stage-06A frozen code | `d94db119a840bf02164c05b1eee21d453b9bb694` (unchanged) |
 | Stage-06A report | `b48413f77deb1af1f37e82ab19b34fdaaed1328b` (unchanged) |
 | freeze commit (§33) | `8710b565e1bbada0169fb6c4e5446ebc851c0016` |
-| final HEAD | recorded in §31 of this report, written immediately after it |
+| this report's own commit | `a56f18bede6ef78ad3be19690ce391ee0d647a44` |
+| final HEAD | the commit after this one, which records this line and nothing else |
 
 Nine commits. Stages 06 and 06A were not rewritten: §1's list — source roles, the
 OCR seam, the Tesseract abstraction, dimension observations, physical ownership,
