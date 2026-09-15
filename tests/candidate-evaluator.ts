@@ -231,20 +231,58 @@ export type CandidateEvaluation = {
     merged: number
     missing: number
     rate: number
+    /** Edges the gold carries a door on, and how many of those agree. */
+    doorEdges: number
+    doorAgreed: number
+    /** Edges the gold marks notional — one open space — and how many agree. */
+    openEdges: number
+    openAgreed: number
+    /**
+     * Open edges satisfied by the candidate returning the two as one space
+     * rather than as two regions with a wall between them. Agreed, and
+     * reported separately because it is also a merge.
+     */
+    agreedByMerge: number
+    rows: Array<{ edge: string; kind: 'DOOR' | 'OPEN'; outcome: 'AGREED' | 'MERGED' | 'MISSING'; why: string }>
   }
   doors: {
     goldDoors: number
     detected: number
     unresolved: number
     rate: number
-    rows: Array<{ goldId: string; outcome: 'DETECTED' | 'UNRESOLVED' | 'MISSED'; why: string }>
+    /** §14: read as a DOOR, not merely as an opening nobody explained. */
+    asDoor: number
+    asDoorRate: number
+    /** Of those, the ones on the wall the gold says hosts them. */
+    hostCorrect: number
+    hostRate: number
+    /** Widths compared, where the gold gives one. */
+    widthsCompared: number
+    widthsWithin: number
+    widthToleranceM: number
+    rows: Array<{
+      goldId: string
+      outcome: 'DETECTED' | 'UNRESOLVED' | 'MISSED'
+      /** What the candidate says is in the opening it found there. */
+      foundClass: string
+      hostCorrect: boolean
+      goldWidthM: number
+      foundWidthM: number | null
+      why: string
+    }>
   }
   rooms: {
     candidateRooms: number
     goldRooms: number
     mapped: number
+    /** Gold rooms whose own centre falls inside some candidate region. */
+    goldCovered: number
+    /** Gold rooms no candidate region covers at all. */
+    goldUncovered: string[]
     /** Candidate rooms covering more than one gold room: under-segmentation. */
     merged: number
+    /** Which gold rooms each merged region absorbed. */
+    mergedRows: string[][]
   }
 }
 
@@ -423,81 +461,172 @@ export function evaluateCandidate(
   }
   invented.worst.sort((a, b) => b.overlapM - a.overlapM)
 
-  // --- rooms: which gold room each candidate region sits in
-  const mapping = new Map<string, string[]>()
+  // --- rooms: which gold rooms each candidate region stands for
+  //
+  // A region stands for every gold room whose own centre it covers. Reading it
+  // the other way round — one gold room per region, by the region's centre —
+  // gets a corridor that swallowed the stairs wrong twice over: it names the
+  // pair by whichever of them the merged centroid happens to land in, and then
+  // every edge to that corridor is counted against the wrong room. Which of
+  // the two happened is what §14 wants counted, and it is counted below as a
+  // merge; it is not also allowed to destroy the adjacency figure.
+  const goldRoomsOf = new Map<string, string[]>()
   for (const r of rooms) {
-    const p = { x: r.centroid.x + alignment.dx, z: r.centroid.z + alignment.dz }
-    const hit = goldRooms.find((g) => insidePolygon(p, g.polygon))
-    if (!hit) continue
-    const list = mapping.get(r.id) ?? []
-    list.push(hit.id)
-    mapping.set(r.id, list)
+    goldRoomsOf.set(
+      r.id,
+      goldRooms.filter((g) => goldCentreInside(g, r, alignment)).map((g) => g.id),
+    )
   }
-  const goldOfCandidate = new Map<string, string>()
-  for (const [candidateId, list] of mapping) goldOfCandidate.set(candidateId, list[0])
-  // A candidate region that contains several gold rooms' centres has merged
-  // them; that is under-segmentation and is counted rather than excused.
-  let mergedRooms = 0
-  for (const r of rooms) {
-    if (goldRooms.filter((g) => centroidInside(g, r, alignment)).length > 1) mergedRooms++
-  }
+  // A region covering several gold rooms' centres has merged them; that is
+  // under-segmentation and is counted rather than excused.
+  const mergedRooms = [...goldRoomsOf.values()].filter((list) => list.length > 1).length
+  const mappedRooms = [...goldRoomsOf.values()].filter((list) => list.length > 0).length
 
   // --- adjacency
-  const goldEdges = new Set<string>()
+  //
+  // The gold has two kinds of edge and they are not the same claim.
+  //
+  // An edge carried by a *door* says the two rooms are separate spaces joined
+  // by a door. Merging them is a failure: the door was supposed to separate
+  // them and did not.
+  //
+  // An edge the gold marks `notional` says the opposite — that these two
+  // labelled spaces run into each other with nothing between them. A candidate
+  // that returns them as one region has got that connection right, and §11 of
+  // the brief is explicit that inventing a wall to split them would be wrong.
+  // So such an edge agrees either way: two regions with an adjacency between
+  // them, or one region containing both. What is lost — that the source gives
+  // the one space two names — is counted as a merge and reported separately,
+  // and the candidate is required to say so itself (§11, §12).
+  const doorEdgeKeys = new Set<string>()
   for (const o of goldOpenings) {
     if (o.connects.length !== 2) continue
-    goldEdges.add(edgeKey(o.connects[0], o.connects[1]))
+    doorEdgeKeys.add(edgeKey(o.connects[0], o.connects[1]))
   }
+  const openEdgeKeys = new Set<string>()
   for (const r of goldRooms) {
-    for (const e of r.notionalEdges ?? []) goldEdges.add(edgeKey(r.id, e.toRoomId))
+    for (const e of r.notionalEdges ?? []) {
+      const k = edgeKey(r.id, e.toRoomId)
+      if (!doorEdgeKeys.has(k)) openEdgeKeys.add(k)
+    }
   }
+  const goldEdges = new Set<string>([...doorEdgeKeys, ...openEdgeKeys])
   const candidateEdges = new Set<string>()
   for (const a of adjacency) {
-    const ga = goldOfCandidate.get(a.a)
-    const gb = goldOfCandidate.get(a.b)
-    if (!ga || !gb || ga === gb) continue
-    candidateEdges.add(edgeKey(ga, gb))
+    for (const ga of goldRoomsOf.get(a.a) ?? []) {
+      for (const gb of goldRoomsOf.get(a.b) ?? []) {
+        if (ga === gb) continue
+        candidateEdges.add(edgeKey(ga, gb))
+      }
+    }
   }
   let agreed = 0
   let merged = 0
+  let agreedByMerge = 0
+  const edgeRows: CandidateEvaluation['adjacency']['rows'] = []
   for (const e of goldEdges) {
+    const kind: 'DOOR' | 'OPEN' = doorEdgeKeys.has(e) ? 'DOOR' : 'OPEN'
+    const [a, b] = e.split('|')
+    const inOneRegion = [...goldRoomsOf.values()].some((list) => list.includes(a) && list.includes(b))
     if (candidateEdges.has(e)) {
       agreed++
+      edgeRows.push({ edge: e, kind, outcome: 'AGREED', why: 'two regions, and the candidate reports a wall between them' })
       continue
     }
-    // Both rooms inside one candidate region: the edge is in the drawing and
-    // the extraction merged the rooms rather than missing the wall between
-    // them. Saying which of the two happened is the point of reporting it.
-    const [a, b] = e.split('|')
-    if (insideSameRegion(a, b, rooms, goldRooms, alignment)) merged++
+    if (inOneRegion) {
+      if (kind === 'OPEN') {
+        agreed++
+        agreedByMerge++
+        edgeRows.push({
+          edge: e,
+          kind,
+          outcome: 'AGREED',
+          why: 'the gold says these two run into each other, and the candidate returns them as one space',
+        })
+        continue
+      }
+      merged++
+      edgeRows.push({
+        edge: e,
+        kind,
+        outcome: 'MERGED',
+        why: 'a door separates these in the gold, and the candidate returned them as one region',
+      })
+      continue
+    }
+    edgeRows.push({
+      edge: e,
+      kind,
+      outcome: 'MISSING',
+      why: 'neither joined nor merged: the candidate has no region pair standing for these two',
+    })
   }
 
   // --- doors
+  //
+  // §14 replaced Stage 06's "detected or explicitly unresolved" with something
+  // stricter: the opening has to be read *as a door*, on the wall the gold
+  // says hosts it, and at a width the source supports. All three are measured.
+  //
+  // The width tolerance adapts to the drawing rather than being a constant: it
+  // is four pixels of the raster this candidate was read from, which is about
+  // the resolution of the reading and of the hand transcription alike.
+  const pxPerCm = plan?.pxPerCm ?? null
+  const widthToleranceM = pxPerCm && pxPerCm > 0 ? Math.max(0.06, 4 / (pxPerCm * 100)) : 0.1
   const doorRows: CandidateEvaluation['doors']['rows'] = []
+  // A wall the gold marks `emit: false` is still a wall the gold knows about;
+  // the flag says it is not part of the wall set being matched, not that the
+  // door hanging in it has no host.
+  const allGoldWalls = gold.walls.filter((w) => w.level === level)
   for (const o of goldOpenings.filter((x) => x.kind === 'DOOR')) {
-    const host = goldWalls.find((w) => w.id === o.wallId)
+    const host = allGoldWalls.find((w) => w.id === o.wallId)
+    const goldWidthM = o.toM - o.fromM
     if (!host) {
-      doorRows.push({ goldId: o.id, outcome: 'UNRESOLVED', why: 'the gold names a host wall that is not in the gold' })
+      doorRows.push({
+        goldId: o.id,
+        outcome: 'UNRESOLVED',
+        foundClass: 'NONE',
+        hostCorrect: false,
+        goldWidthM,
+        foundWidthM: null,
+        why: 'the gold names a host wall that is not in the gold',
+      })
       continue
     }
-    let found = false
     let hostFound = false
+    let best: { cls: string; widthM: number; overlap: number } | null = null
     for (const w of walls) {
       if (w.axis !== host.axis) continue
       const s = shifted(w)
       if (Math.abs(s.centre - host.atM) > opts.positionToleranceM) continue
       hostFound = true
+      const shift = s.from - Math.min(w.fromM, w.toM)
       for (const op of w.openings) {
-        const from = Math.min(op.fromM, op.toM) + (w.axis === 'X' ? alignment.dx : alignment.dz)
-        const to = Math.max(op.fromM, op.toM) + (w.axis === 'X' ? alignment.dx : alignment.dz)
-        if (overlapOf(from, to, o.fromM, o.toM) > 0.2) found = true
+        const from = Math.min(op.fromM, op.toM) + shift
+        const to = Math.max(op.fromM, op.toM) + shift
+        const cover = overlapOf(from, to, o.fromM, o.toM)
+        if (cover <= 0.2) continue
+        // A DOOR outranks any other reading of the same stretch: what is
+        // being asked is whether the pipeline knows a door is there.
+        const better =
+          best === null ||
+          (op.class === 'DOOR' && best.cls !== 'DOOR') ||
+          (op.class === best.cls && cover > best.overlap)
+        if (better) best = { cls: op.class, widthM: to - from, overlap: cover }
       }
     }
+    const found = best !== null
     doorRows.push({
       goldId: o.id,
       outcome: found ? 'DETECTED' : hostFound ? 'UNRESOLVED' : 'MISSED',
+      foundClass: best?.cls ?? 'NONE',
+      hostCorrect: best?.cls === 'DOOR',
+      goldWidthM,
+      foundWidthM: best?.widthM ?? null,
       why: found
-        ? 'an opening on the matching wall covers it'
+        ? best!.cls === 'DOOR'
+          ? 'a door is reported on the wall the gold says hosts it'
+          : `an opening on the matching wall covers it, but it is reported as ${best!.cls}`
         : hostFound
           ? 'the host wall was found but reported no opening there'
           : 'the host wall was not found at all',
@@ -505,6 +634,12 @@ export function evaluateCandidate(
   }
   const detected = doorRows.filter((r) => r.outcome === 'DETECTED').length
   const unresolved = doorRows.filter((r) => r.outcome === 'UNRESOLVED').length
+  const asDoor = doorRows.filter((r) => r.foundClass === 'DOOR').length
+  const hostCorrect = doorRows.filter((r) => r.hostCorrect).length
+  const widthRows = doorRows.filter((r) => r.foundWidthM !== null)
+  const widthsWithin = widthRows.filter(
+    (r) => Math.abs((r.foundWidthM ?? 0) - r.goldWidthM) <= widthToleranceM,
+  ).length
 
   return {
     storey,
@@ -516,21 +651,37 @@ export function evaluateCandidate(
       goldEdges: goldEdges.size,
       agreed,
       merged,
-      missing: goldEdges.size - agreed - merged,
+      missing: edgeRows.filter((r) => r.outcome === 'MISSING').length,
       rate: goldEdges.size === 0 ? 0 : agreed / goldEdges.size,
+      doorEdges: doorEdgeKeys.size,
+      doorAgreed: edgeRows.filter((r) => r.kind === 'DOOR' && r.outcome === 'AGREED').length,
+      openEdges: openEdgeKeys.size,
+      openAgreed: edgeRows.filter((r) => r.kind === 'OPEN' && r.outcome === 'AGREED').length,
+      agreedByMerge,
+      rows: edgeRows,
     },
     doors: {
       goldDoors: doorRows.length,
       detected,
       unresolved,
       rate: doorRows.length === 0 ? 0 : (detected + unresolved) / doorRows.length,
+      asDoor,
+      asDoorRate: doorRows.length === 0 ? 0 : asDoor / doorRows.length,
+      hostCorrect,
+      hostRate: doorRows.length === 0 ? 0 : hostCorrect / doorRows.length,
+      widthsCompared: widthRows.length,
+      widthsWithin,
+      widthToleranceM,
       rows: doorRows,
     },
     rooms: {
       candidateRooms: rooms.length,
       goldRooms: goldRooms.length,
-      mapped: goldOfCandidate.size,
+      mapped: mappedRooms,
+      goldCovered: goldRooms.filter((g) => [...goldRoomsOf.values()].some((l) => l.includes(g.id))).length,
+      goldUncovered: goldRooms.filter((g) => ![...goldRoomsOf.values()].some((l) => l.includes(g.id))).map((g) => g.id),
       merged: mergedRooms,
+      mergedRows: [...goldRoomsOf.values()].filter((l) => l.length > 1),
     },
   }
 }
@@ -573,32 +724,27 @@ function unionLength(spans: ReadonlyArray<[number, number]>): number {
   return total + (to - from)
 }
 
-const centroidInside = (
+/**
+ * Whether a gold room's own centre falls inside a candidate region.
+ *
+ * Against the region's *footprint*, never its box. A corridor's box contains
+ * most of the rooms off it, and a box test therefore reports that the corridor
+ * swallowed rooms it never touched.
+ */
+const goldCentreInside = (
   g: GoldRoom,
-  r: { centroid: { x: number; z: number }; box: { x0: number; z0: number; x1: number; z1: number } },
+  r: {
+    box: { x0: number; z0: number; x1: number; z1: number }
+    footprint: { cellM: number; cols: number; rows: number; filled: string }
+  },
   alignment: { dx: number; dz: number },
 ): boolean => {
-  // A gold room sits inside a candidate region when the gold room's own
-  // centroid falls in the region's box; used only to count merges.
-  const cx = g.polygon.reduce((n, p) => n + p[0], 0) / g.polygon.length
-  const cz = g.polygon.reduce((n, p) => n + p[1], 0) / g.polygon.length
-  return (
-    cx >= r.box.x0 + alignment.dx &&
-    cx <= r.box.x1 + alignment.dx &&
-    cz >= r.box.z0 + alignment.dz &&
-    cz <= r.box.z1 + alignment.dz
-  )
-}
-
-const insideSameRegion = (
-  a: string,
-  b: string,
-  rooms: ReadonlyArray<{ centroid: { x: number; z: number }; box: { x0: number; z0: number; x1: number; z1: number } }>,
-  goldRooms: readonly GoldRoom[],
-  alignment: { dx: number; dz: number },
-): boolean => {
-  const ga = goldRooms.find((g) => g.id === a)
-  const gb = goldRooms.find((g) => g.id === b)
-  if (!ga || !gb) return false
-  return rooms.some((r) => centroidInside(ga, r, alignment) && centroidInside(gb, r, alignment))
+  const cx = g.polygon.reduce((n, p) => n + p[0], 0) / g.polygon.length - alignment.dx
+  const cz = g.polygon.reduce((n, p) => n + p[1], 0) / g.polygon.length - alignment.dz
+  if (cx < r.box.x0 || cx > r.box.x1 || cz < r.box.z0 || cz > r.box.z1) return false
+  const { cellM, cols, rows, filled } = r.footprint
+  if (cols === 0 || rows === 0 || cellM <= 0) return true
+  const col = Math.min(cols - 1, Math.max(0, Math.floor((cx - r.box.x0) / cellM)))
+  const row = Math.min(rows - 1, Math.max(0, Math.floor((cz - r.box.z0) / cellM)))
+  return filled[row * cols + col] === '1'
 }

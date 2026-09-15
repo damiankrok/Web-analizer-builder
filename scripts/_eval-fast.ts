@@ -49,5 +49,9 @@ for (const { storey, level } of [
   for (const r of e.walls.rows.filter((x) => x.goldLengthM >= 0.6).sort((a, b) => a.matchedM / a.goldLengthM - b.matchedM / b.goldLengthM)) {
     console.log(`    ${r.goldId.padEnd(22)} ${r.matchedM.toFixed(2)}/${r.goldLengthM.toFixed(2)} m (${((r.matchedM / r.goldLengthM) * 100).toFixed(0)}%)`)
   }
-  for (const r of e.doors.rows) console.log(`    door ${r.goldId.padEnd(16)} ${r.outcome}`)
+  for (const r of e.doors.rows) console.log(`    door ${r.goldId.padEnd(16)} ${r.outcome} ${r.foundClass} gold ${r.goldWidthM.toFixed(2)} found ${(r.foundWidthM ?? 0).toFixed(2)}`)
+  console.log(`    gold rooms covered ${e.rooms.goldCovered}/${e.rooms.goldRooms}; not covered: ${e.rooms.goldUncovered.join(', ') || 'none'}; merged regions ${e.rooms.mergedRows.map((r) => r.join('+')).join(' | ') || 'none'}`)
+  console.log(`    door edges ${e.adjacency.doorAgreed}/${e.adjacency.doorEdges}, open edges ${e.adjacency.openAgreed}/${e.adjacency.openEdges}`)
+  for (const r of e.adjacency.rows) console.log(`    edge ${r.edge.padEnd(34)} ${r.kind.padEnd(5)} ${r.outcome}`)
+  console.log(`    as DOOR ${e.doors.asDoor}/${e.doors.goldDoors}, host ${e.doors.hostCorrect}/${e.doors.goldDoors}, widths ${e.doors.widthsWithin}/${e.doors.widthsCompared} within ${e.doors.widthToleranceM.toFixed(3)} m`)
 }

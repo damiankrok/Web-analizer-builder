@@ -100,6 +100,16 @@ export type CandidateRoom = {
   areaM2: number
   box: { x0: number; z0: number; x1: number; z1: number }
   centroid: { x: number; z: number }
+  /**
+   * The region's own shape over its box, as a coarse grid: `cellM` metres a
+   * cell, row-major from the box's north-west corner, `1` where the region
+   * covers the cell.
+   *
+   * A box is not a room. A corridor's box contains most of the rooms off it,
+   * so a reader that asks a box whether a point is in the corridor is told yes
+   * about exactly the points that matter.
+   */
+  footprint: { cellM: number; cols: number; rows: number; filled: string }
   confidence: number
   provenance: CandidateProvenance
 }
@@ -297,6 +307,12 @@ export function buildSpecCandidate(
           areaM2: areaM2(r),
           box: { x0: xM(r.box.x0), z0: zM(r.box.y0), x1: xM(r.box.x1), z1: zM(r.box.y1) },
           centroid: { x: xM(r.centroid.x), z: zM(r.centroid.y) },
+          footprint: {
+            cellM: toM(r.occupancy.cellPx),
+            cols: r.occupancy.cols,
+            rows: r.occupancy.rows,
+            filled: Array.from(r.occupancy.filled, (v) => (v === 1 ? '1' : '0')).join(''),
+          },
           // A region is as sure as its boundary: one that is entirely bounded
           // by walls this pipeline also found is worth more than one leaning
           // on the sheet edge.

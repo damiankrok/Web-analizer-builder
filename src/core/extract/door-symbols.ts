@@ -896,8 +896,19 @@ export function detectDoorSymbols(
         if (!band) continue
         // Walk back towards the opening for as long as the wall is still
         // there: where it stops is the jamb, and the opening starts there.
+        //
+        // Followed in *ink* rather than in fabric. Fabric is ink that survives
+        // an opening by a pixel, which is the right question for "is this a
+        // wall" and the wrong one for "where does this wall end": a published
+        // edge is antialiased, so the last row or two of a jamb is ink that
+        // an opening removes, and measuring to the fabric reports a doorway a
+        // few centimetres wider at each jamb than the one that is drawn.
+        const inkOn = (t: number): boolean =>
+          axis === 'X'
+            ? at(Math.round(t), Math.round(band.centre), ink)
+            : at(Math.round(band.centre), Math.round(t), ink)
         let inner = edge + dir * k
-        while (jambBand(axis, inner - dir, hingeAcross)) inner -= dir
+        while (jambBand(axis, inner - dir, hingeAcross) || inkOn(inner - dir)) inner -= dir
         // And away from it, to see whether this is a wall carrying on or a
         // crumb of something else that happened to be the right thickness.
         // What is followed is the *material*, not a band of one thickness: a
@@ -982,25 +993,28 @@ export function detectDoorSymbols(
     // fitted radius implies. The radius says a door of about this width hangs
     // here; the jambs say where it stops, and §14 asks for the width the
     // source can be read to give.
-    const openFrom = before.innerPx + 1
-    const openTo = after.innerPx - 1
-    const openWidthPx = openTo - openFrom + 1
-    if (openWidthPx < opts.minWidthM * 100 * pxPerCm || openWidthPx > opts.maxWidthM * 100 * pxPerCm) {
+    const jambFrom = before.innerPx + 1
+    const jambTo = after.innerPx - 1
+    const jambWidthPx = jambTo - jambFrom + 1
+    if (jambWidthPx < opts.minWidthM * 100 * pxPerCm || jambWidthPx > opts.maxWidthM * 100 * pxPerCm) {
       rejected.push({
         atPx: hinge,
-        why: `the jambs leave ${(openWidthPx / pxPerCm / 100).toFixed(2)} m between them, which is not a door width`,
+        why: `the jambs leave ${(jambWidthPx / pxPerCm / 100).toFixed(2)} m between them, which is not a door width`,
       })
       return false
     }
-    if (Math.abs(openWidthPx - radiusPx) > opts.widthAgreementM * 100 * pxPerCm) {
+    if (Math.abs(jambWidthPx - radiusPx) > opts.widthAgreementM * 100 * pxPerCm) {
       rejected.push({
         atPx: hinge,
         why:
           `the swing is ${(radiusPx / pxPerCm / 100).toFixed(2)} m but the jambs leave ` +
-          `${(openWidthPx / pxPerCm / 100).toFixed(2)} m, and a leaf fills its own opening`,
+          `${(jambWidthPx / pxPerCm / 100).toFixed(2)} m, and a leaf fills its own opening`,
       })
       return false
     }
+    const openFrom = jambFrom
+    const openTo = jambTo
+    const openWidthPx = jambWidthPx
 
     // The opening a door hangs in is free of material. If it is not, the
     // hypothesis is describing something else — §18's "fill the doorway with

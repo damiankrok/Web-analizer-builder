@@ -31,6 +31,18 @@
  */
 import type { GrayImage } from '../contracts/raster.js'
 import { solidThreshold, DEFAULT_WALL_BANDS, type WallBand } from './wall-bands.js'
+import { inkLayers, DEFAULT_DOOR_SYMBOLS, type DoorObservation } from './door-symbols.js'
+import {
+  classifyOpenings,
+  closeAtCrossings,
+  placeDoors,
+  separatorsOf,
+  paintSeparators,
+  DEFAULT_TOPOLOGY,
+  type DoorPlacement,
+  type Separator,
+  type TopologyOptions,
+} from './room-topology.js'
 
 export type PlanModelOptions = {
   /** Faces this close are the same line, pixels. */
@@ -111,6 +123,15 @@ export type WallOpening = {
   classConfidence: number
   /** Why it was classified the way it was. */
   why: string
+  /**
+   * True where this opening is not a gap in the material at all but the
+   * stretch between a wall's end and the wall it runs into.
+   *
+   * It is an inference about where a boundary goes, and a weaker one than a
+   * hole in the fabric. It is strong enough to keep the outside out and too
+   * weak to cut a room in half, and §10's barrier treats it accordingly.
+   */
+  carried?: boolean
 }
 
 export type WallRun = {
@@ -297,6 +318,16 @@ export type RoomRegion = {
   centroid: { x: number; y: number }
   /** Whether the region touches the drawing's border: the outside, not a room. */
   touchesEdge: boolean
+  /**
+   * Which parts of the region's own box the region actually covers, as a
+   * coarse grid of cells over that box.
+   *
+   * A room is a shape, not a rectangle. A corridor's bounding box contains
+   * most of the rooms off it, so anything that asks "is this point in that
+   * room" of a box gets the wrong answer about exactly the rooms that matter.
+   * The grid is a few hundred cells and answers it properly.
+   */
+  occupancy: { cols: number; rows: number; cellPx: number; filled: Uint8Array }
 }
 
 export type RoomAdjacency = {
@@ -308,12 +339,24 @@ export type RoomAdjacency = {
   sharedPx: number
   /** Openings in that shared stretch: the doors between them. */
   openings: WallOpening[]
+  /**
+   * True where the only thing keeping these two apart is an opening nothing
+   * explained. §10: an `UNKNOWN_GAP` may not receive a confident topology
+   * decision, so the edge is reported and marked rather than asserted.
+   */
+  unresolved: boolean
+  why: string
 }
 
 export type PlanModel = {
   runs: WallRun[]
   rooms: RoomRegion[]
   adjacency: RoomAdjacency[]
+  /** The doors that were read, and where each of them was hung (§9). */
+  doors: DoorObservation[]
+  placements: DoorPlacement[]
+  /** The boundary model rooms were flooded against (§10). */
+  separators: Separator[]
   /** Region id per pixel, or -1. Kept so a caller can measure what it likes. */
   labels: Int32Array
   width: number
@@ -419,9 +462,34 @@ function floodRegions(
       box: { x0, y0, x1, y1 },
       centroid: { x: sx / areaPx, y: sy / areaPx },
       touchesEdge,
+      occupancy: { cols: 0, rows: 0, cellPx: 1, filled: new Uint8Array(0) },
     })
   }
   return { labels, regions }
+}
+
+/** Fill in each region's coarse footprint, once the labels are known. */
+function measureOccupancy(
+  regions: RoomRegion[],
+  labels: Int32Array,
+  width: number,
+  cellPx: number,
+): void {
+  for (let id = 0; id < regions.length; id++) {
+    const r = regions[id]
+    const cols = Math.max(1, Math.ceil((r.box.x1 - r.box.x0 + 1) / cellPx))
+    const rows = Math.max(1, Math.ceil((r.box.y1 - r.box.y0 + 1) / cellPx))
+    const filled = new Uint8Array(cols * rows)
+    for (let y = r.box.y0; y <= r.box.y1; y++) {
+      for (let x = r.box.x0; x <= r.box.x1; x++) {
+        if (labels[y * width + x] !== id) continue
+        const cx = Math.min(cols - 1, Math.floor((x - r.box.x0) / cellPx))
+        const cy = Math.min(rows - 1, Math.floor((y - r.box.y0) / cellPx))
+        filled[cy * cols + cx] = 1
+      }
+    }
+    r.occupancy = { cols, rows, cellPx, filled }
+  }
 }
 
 /** Which regions each wall separates, and through which openings. */
@@ -455,12 +523,25 @@ function readAdjacency(
     }
     for (const [key, entry] of counts) {
       const [a, b] = key.split('|')
+      const shared = run.openings.filter((o) => o.toPx >= entry.from && o.fromPx <= entry.to)
+      const doors = shared.filter((o) => o.class === 'DOOR')
+      const unknown = shared.filter((o) => o.class === 'UNKNOWN_GAP')
       out.push({
         wallRunId: run.id,
         a,
         b,
         sharedPx: entry.n,
-        openings: run.openings.filter((o) => o.toPx >= entry.from && o.fromPx <= entry.to),
+        openings: shared,
+        // §10: what a door says is that these two rooms are neighbours. What
+        // an unexplained gap says is nothing, and this edge exists only
+        // because keeping the two apart was the reading that asserts least.
+        unresolved: doors.length === 0 && unknown.length > 0,
+        why:
+          doors.length > 0
+            ? `${doors.length} door${doors.length === 1 ? '' : 's'} is drawn in the wall between them`
+            : unknown.length > 0
+              ? `the wall between them is interrupted ${unknown.length} time${unknown.length === 1 ? '' : 's'} and nothing says what is in the gap`
+              : 'one wall runs between them with no opening in it',
       })
     }
   }
@@ -472,13 +553,18 @@ export function buildPlanModel(
   bands: readonly WallBand[],
   pxPerCm: number | null,
   opts: PlanModelOptions = DEFAULT_PLAN_MODEL,
+  doors: readonly DoorObservation[] = [],
+  topology: TopologyOptions = DEFAULT_TOPOLOGY,
 ): PlanModel {
   const { width, height } = gray
-  if (pxPerCm === null || pxPerCm <= 0 || bands.length === 0) {
+  if (pxPerCm === null || pxPerCm <= 0 || (bands.length === 0 && doors.length === 0)) {
     return {
       runs: [],
       rooms: [],
       adjacency: [],
+      doors: [],
+      placements: [],
+      separators: [],
       labels: new Int32Array(width * height).fill(-1),
       width,
       height,
@@ -486,9 +572,47 @@ export function buildPlanModel(
     }
   }
   const solid = solidThreshold(gray, opts.solidFraction)
-  const runs = joinAtJunctions(mergeWallRuns(bands, pxPerCm, opts), gray, solid, pxPerCm, opts)
-  const mask = barrierMask(gray, runs, solid, width, height)
+  const joined = joinAtJunctions(mergeWallRuns(bands, pxPerCm, opts), gray, solid, pxPerCm, opts)
+
+  // §9: every door on a host wall, and a host wall wherever a door says there
+  // is one that the bands were too short to claim.
+  const { fabric } = inkLayers(gray, solid, DEFAULT_DOOR_SYMBOLS)
+  const placed = placeDoors(joined, doors, fabric, width, height, pxPerCm, topology)
+  // A wall's line does not stop where its material stops: it carries on to the
+  // wall it runs into, and what is between is an opening. Without this the
+  // garage drains into the street through its own door.
+  const carried = closeAtCrossings(placed.runs, fabric, width, height, pxPerCm, topology)
+
+  // What the space around the building is, so an opening onto it can be told
+  // from one between two rooms. Found with every wall line closed, because a
+  // window is drawn as line work and a flood that leaks through every window
+  // cannot tell inside from outside.
+  const closed = barrierMask(gray, carried.runs, solid, width, height)
+  const around = floodRegions(closed, width, height)
+  const outsideIds = new Set(
+    around.regions.filter((r) => r.touchesEdge).map((r) => around.regions.indexOf(r)),
+  )
+  const isOutside = (x: number, y: number): boolean => {
+    const xi = Math.round(x)
+    const yi = Math.round(y)
+    if (xi < 0 || yi < 0 || xi >= width || yi >= height) return true
+    return outsideIds.has(around.labels[yi * width + xi])
+  }
+
+  // §8: what each opening is, read in one direction from UNKNOWN_GAP.
+  const classified = classifyOpenings(carried.runs, isOutside, pxPerCm, topology)
+  const runs = classified.runs
+
+  // §10: the boundary model, made explicit. Fabric, and a separator wherever a
+  // room is not continuous through an opening — never the other way round.
+  const separators = separatorsOf(runs)
+  const mask = new Uint8Array(width * height)
+  for (let i = 0; i < mask.length; i++) if (gray.data[i] <= solid) mask[i] = 1
+  paintSeparators(mask, separators, width, height)
   const { labels, regions } = floodRegions(mask, width, height)
+  // A quarter of a metre: fine enough to tell a corridor from the rooms its
+  // box contains, coarse enough to stay a few hundred cells.
+  measureOccupancy(regions, labels, width, Math.max(1, Math.round(0.25 * 100 * pxPerCm)))
 
   const minAreaPx = opts.minRoomAreaM2 * (100 * pxPerCm) ** 2
   // A region touching the sheet's border is the space around the building, not
@@ -499,19 +623,33 @@ export function buildPlanModel(
   const adjacency = readAdjacency(runs, labels, regions, width, height, keep)
 
   const openings = runs.reduce((n, r) => n + r.openings.length, 0)
+  const counts = classified.counts
   return {
     runs,
     rooms,
     adjacency,
+    doors: [...doors],
+    placements: placed.placements,
+    separators,
     labels,
     width,
     height,
     notes: [
       `${bands.length} bands merged into ${runs.length} wall runs with ${openings} openings`,
+      `${doors.length} doors read: ${placed.placements.filter((p) => p.outcome === 'MATCHED').length} hung on a wall ` +
+        `already found, ${placed.placements.filter((p) => p.outcome === 'MERGED').length} joining two collinear walls ` +
+        `into one, ${placed.placements.filter((p) => p.outcome === 'MADE').length} making their own host from the ` +
+        `material at their jambs, ${placed.placements.filter((p) => p.outcome === 'UNPLACED').length} left unplaced`,
+      `${carried.closed} wall lines carried on to the wall they run into`,
+      `openings: ${counts.DOOR} door, ${counts.OPEN_PASSAGE} open passage, ` +
+        `${counts.EXTERIOR_OPENING} onto the outside, ${counts.UNKNOWN_GAP} unexplained`,
+      `${separators.length} pieces of boundary: ${separators.filter((s2) => s2.kind === 'FABRIC').length} material, ` +
+        `${separators.filter((s2) => s2.kind !== 'FABRIC').length} separators that are not material`,
       `${regions.length} enclosed regions, ${rooms.length} kept as rooms ` +
         `(>= ${opts.minRoomAreaM2} m² and not touching the sheet edge)`,
       `${adjacency.length} room-to-room adjacencies, ` +
-        `${adjacency.filter((a) => a.openings.length > 0).length} of them with a doorway`,
+        `${adjacency.filter((a) => a.openings.some((o) => o.class === 'DOOR')).length} through a door, ` +
+        `${adjacency.filter((a) => a.unresolved).length} left unresolved`,
     ],
   }
 }

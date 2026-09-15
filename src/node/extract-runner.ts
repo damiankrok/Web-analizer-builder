@@ -26,8 +26,9 @@ import {
   type ScaleEstimate,
 } from '../core/extract/dimension-observations.js'
 import type { PlanTextReading } from '../core/extract/text-engine.js'
-import { detectWallBands, type WallBand } from '../core/extract/wall-bands.js'
+import { detectWallBands, DEFAULT_WALL_BANDS, type WallBand } from '../core/extract/wall-bands.js'
 import { buildPlanModel, type PlanModel } from '../core/extract/plan-model.js'
+import { detectDoorSymbols, pairDoubleDoors, type DoorDetection } from '../core/extract/door-symbols.js'
 import { buildSpecCandidate, type ArchitecturalSpecCandidate } from '../core/extract/spec-candidate.js'
 import { TesseractEngine } from './ocr/tesseract.js'
 
@@ -69,7 +70,11 @@ export type PlanExtraction = {
   scales: ScaleEstimate[]
   distortion: ObservationResult['distortion']
   walls: WallBand[]
+  /** Every door symbol read off this drawing, before any of it is used (§4). */
+  doors: DoorDetection
   model: PlanModel
+  /** Milliseconds spent in each stage of this plan (§20). */
+  timings: { doorsMs: number; wallsMs: number; topologyMs: number }
   notes: string[]
 }
 
@@ -190,8 +195,20 @@ export function extractPlanSpec(
     // Walls are measured at the scale the chains established, because their
     // thickness has to be tested in metres to mean anything (§11).
     const scale = built.scales.find((s) => s.pxPerCm !== null)?.pxPerCm ?? null
+    const t0 = Date.now()
     const walls = detectWallBands(p.gray, scale)
-    const model = buildPlanModel(p.gray, walls.bands, scale)
+    const t1 = Date.now()
+    // §4: the door symbols are read from the drawing, not inferred from what
+    // the band detector happened to keep.
+    const detected = detectDoorSymbols(p.gray, scale, p.assetId, DEFAULT_WALL_BANDS.solidFraction, undefined, {
+      minThicknessM: DEFAULT_WALL_BANDS.minThicknessM,
+      maxThicknessM: DEFAULT_WALL_BANDS.maxThicknessM,
+    })
+    const doors: DoorDetection =
+      scale === null ? detected : { ...detected, doors: pairDoubleDoors(detected.doors, scale) }
+    const t2 = Date.now()
+    const model = buildPlanModel(p.gray, walls.bands, scale, undefined, doors.doors)
+    const t3 = Date.now()
     return {
       storey: p.storey,
       assetId: p.assetId,
@@ -204,12 +221,15 @@ export function extractPlanSpec(
       scales: built.scales,
       distortion: built.distortion,
       walls: walls.bands,
+      doors,
       model,
+      timings: { wallsMs: t1 - t0, doorsMs: t2 - t1, topologyMs: t3 - t2 },
       notes: [
         `${p.regions.length} text-region readings offered`,
         ...p.structures.notes,
         ...built.notes,
         ...walls.notes,
+        ...doors.notes,
         ...model.notes,
       ],
     }
