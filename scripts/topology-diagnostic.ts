@@ -9,6 +9,8 @@
  *              hung in a wall, with their opening
  *   barrier    the boundary rooms are flooded against: material in grey, and
  *              each separator in the colour of what put it there
+ *   labels     the room labels the area-labelled copy prints, placed on this
+ *              copy by the shift the two were aligned at
  *   rooms      the regions that came out, tinted, with the outside left white
  *
  * Nothing here reads a gold file.
@@ -138,6 +140,23 @@ for (const plan of result.plans as PlanExtraction[]) {
     writeFileSync(join(outDir, `barrier-${plan.storey}.png`), PNG.sync.write(png))
   }
 
+  // --- the room labels the source prints
+  {
+    const png = canvas(gray)
+    for (const l of model.roomLabels) {
+      for (let x = l.box.x0; x <= l.box.x1; x++) {
+        dot(png, x, l.box.y0, [20, 120, 30], 0)
+        dot(png, x, l.box.y1, [20, 120, 30], 0)
+      }
+      for (let y = l.box.y0; y <= l.box.y1; y++) {
+        dot(png, l.box.x0, y, [20, 120, 30], 0)
+        dot(png, l.box.x1, y, [20, 120, 30], 0)
+      }
+      dot(png, l.centre.x, l.centre.y, [200, 20, 20], 2)
+    }
+    writeFileSync(join(outDir, `labels-${plan.storey}.png`), PNG.sync.write(png))
+  }
+
   // --- the rooms
   {
     const png = canvas(gray)
@@ -181,7 +200,8 @@ for (const plan of result.plans as PlanExtraction[]) {
   for (const n of plan.doors.notes) console.log(`  ${n}`)
   for (const n of model.notes) console.log(`  ${n}`)
   console.log(
-    `  timings: walls ${plan.timings.wallsMs} ms, doors ${plan.timings.doorsMs} ms, topology ${plan.timings.topologyMs} ms`,
+    `  timings: walls ${plan.timings.wallsMs} ms, doors ${plan.timings.doorsMs} ms, ` +
+      `labels ${plan.timings.labelsMs} ms, topology ${plan.timings.topologyMs} ms`,
   )
   for (const d of model.doors) {
     const p = model.placements.find((x) => x.doorId === d.id)
@@ -191,5 +211,7 @@ for (const plan of result.plans as PlanExtraction[]) {
         `-> ${p?.outcome ?? 'UNPLACED'} ${p?.hostWallId ?? ''}`,
     )
   }
-  console.log(`  wrote doors-${plan.storey}.png, barrier-${plan.storey}.png, rooms-${plan.storey}.png`)
+  console.log(
+    `  wrote doors-${plan.storey}.png, barrier-${plan.storey}.png, labels-${plan.storey}.png, rooms-${plan.storey}.png`,
+  )
 }

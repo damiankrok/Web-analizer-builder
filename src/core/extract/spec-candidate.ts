@@ -110,6 +110,16 @@ export type CandidateRoom = {
    * about exactly the points that matter.
    */
   footprint: { cellM: number; cols: number; rows: number; filled: string }
+  /**
+   * How many room labels the source prints inside this region.
+   *
+   * More than one and the source names more than one space here. §11 forbids
+   * inventing a wall to split them, so the region stands and the question is
+   * recorded: `segmentation` says `UNRESOLVED` and a conflict carries the
+   * detail.
+   */
+  labelsInside: number
+  segmentation: 'SETTLED' | 'UNRESOLVED'
   confidence: number
   provenance: CandidateProvenance
 }
@@ -307,6 +317,8 @@ export function buildSpecCandidate(
           areaM2: areaM2(r),
           box: { x0: xM(r.box.x0), z0: zM(r.box.y0), x1: xM(r.box.x1), z1: zM(r.box.y1) },
           centroid: { x: xM(r.centroid.x), z: zM(r.centroid.y) },
+          labelsInside: r.labels.length,
+          segmentation: r.labels.length > 1 ? ('UNRESOLVED' as const) : ('SETTLED' as const),
           footprint: {
             cellM: toM(r.occupancy.cellPx),
             cols: r.occupancy.cols,
@@ -361,6 +373,40 @@ export function buildSpecCandidate(
       dimensions,
       unownedReadings,
     })
+  }
+
+  // --- §11: one region, more than one name
+  //
+  // The source prints a label in each space it names. Where two of them fall
+  // in one region the extraction has returned as a single space, one of two
+  // things is true and the drawing does not say which: either the spaces run
+  // into each other and the region is right, or there is a division the
+  // extraction did not find. §11 forbids settling it by inventing a wall, so
+  // it is not settled. It is recorded.
+  for (const s of storeys) {
+    for (const room of s.rooms) {
+      if (room.segmentation !== 'UNRESOLVED') continue
+      conflicts.push({
+        id: `cf${conflicts.length}`,
+        kind: 'OPEN_PLAN_SEGMENTATION_UNRESOLVED',
+        observations: [
+          `${s.storey}: one enclosed region of ${room.areaM2.toFixed(1)} m² at ` +
+            `x ${room.box.x0.toFixed(2)}..${room.box.x1.toFixed(2)}, z ${room.box.z0.toFixed(2)}..${room.box.z1.toFixed(2)}`,
+          `the source prints ${room.labelsInside} room labels inside it`,
+        ],
+        unresolved:
+          'whether these are one open space the source gives several names, or spaces divided by something ' +
+          'this reading did not find. Nothing in the drawing separates them, and a wall put here to make the ' +
+          'count come out would be a wall no source shows (§11). The region stands and the question does not.',
+        confidence: Math.min(0.5, 0.2 * room.labelsInside),
+      })
+    }
+  }
+  if (conflicts.length > 0) {
+    notes.push(
+      `${conflicts.filter((c) => c.kind === 'OPEN_PLAN_SEGMENTATION_UNRESOLVED').length} regions carry more than ` +
+        'one of the source\u2019s room labels; their segmentation is left unresolved rather than forced',
+    )
   }
 
   // --- §2: a void seen on two storeys is two observations, not one shaft

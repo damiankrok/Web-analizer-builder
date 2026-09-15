@@ -22,6 +22,9 @@ import { DEFAULT_DIMENSION_STRUCTURES } from './dimension-structures.js'
 import { DEFAULT_CHAIN_FIT } from './chain-fit.js'
 import { DEFAULT_OBSERVATIONS } from './dimension-observations.js'
 import { DEFAULT_WALL_BANDS } from './wall-bands.js'
+import { DEFAULT_DOOR_SYMBOLS } from './door-symbols.js'
+import { DEFAULT_TOPOLOGY } from './room-topology.js'
+import { DEFAULT_ROOM_LABELS } from './room-labels.js'
 import { DEFAULT_PLAN_MODEL } from './plan-model.js'
 import { DEFAULT_CANDIDATE } from './spec-candidate.js'
 
@@ -37,6 +40,9 @@ export const extractionConfig = (): Record<string, unknown> => ({
   chainFit: DEFAULT_CHAIN_FIT,
   observations: DEFAULT_OBSERVATIONS,
   wallBands: DEFAULT_WALL_BANDS,
+  doorSymbols: DEFAULT_DOOR_SYMBOLS,
+  roomTopology: DEFAULT_TOPOLOGY,
+  roomLabels: DEFAULT_ROOM_LABELS,
   planModel: DEFAULT_PLAN_MODEL,
   candidate: DEFAULT_CANDIDATE,
 })

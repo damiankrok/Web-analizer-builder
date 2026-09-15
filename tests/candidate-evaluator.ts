@@ -68,12 +68,18 @@ export type EvaluationOptions = {
   maxAlignM: number
   /** Gold walls shorter than this are not "major". */
   majorWallM: number
+  /** Step at which a gold room's polygon is sampled when matching it, metres. */
+  roomSampleM: number
+  /** How much of a gold room a region must cover to be standing for it, 0..1. */
+  roomOverlap: number
 }
 
 export const DEFAULT_EVALUATION: EvaluationOptions = {
   positionToleranceM: 0.2,
   maxAlignM: 8,
   majorWallM: 0.6,
+  roomSampleM: 0.1,
+  roomOverlap: 0.3,
 }
 
 const overlapOf = (a0: number, a1: number, b0: number, b1: number): number =>
@@ -283,6 +289,11 @@ export type CandidateEvaluation = {
     merged: number
     /** Which gold rooms each merged region absorbed. */
     mergedRows: string[][]
+    /**
+     * Merged regions the candidate itself marks unresolved. §14 allows a
+     * remaining merge only when the candidate says it is one.
+     */
+    mergedUnresolved: number
   }
 }
 
@@ -471,11 +482,11 @@ export function evaluateCandidate(
   // the two happened is what §14 wants counted, and it is counted below as a
   // merge; it is not also allowed to destroy the adjacency figure.
   const goldRoomsOf = new Map<string, string[]>()
-  for (const r of rooms) {
-    goldRoomsOf.set(
-      r.id,
-      goldRooms.filter((g) => goldCentreInside(g, r, alignment)).map((g) => g.id),
-    )
+  for (const r of rooms) goldRoomsOf.set(r.id, [])
+  for (const g of goldRooms) {
+    const home = bestRegionFor(g, rooms, alignment, opts)
+    if (!home) continue
+    goldRoomsOf.get(home)?.push(g.id)
   }
   // A region covering several gold rooms' centres has merged them; that is
   // under-segmentation and is counted rather than excused.
@@ -682,6 +693,9 @@ export function evaluateCandidate(
       goldUncovered: goldRooms.filter((g) => ![...goldRoomsOf.values()].some((l) => l.includes(g.id))).map((g) => g.id),
       merged: mergedRooms,
       mergedRows: [...goldRoomsOf.values()].filter((l) => l.length > 1),
+      mergedUnresolved: [...goldRoomsOf.entries()].filter(
+        ([id, l]) => l.length > 1 && rooms.find((r) => r.id === id)?.segmentation === 'UNRESOLVED',
+      ).length,
     },
   }
 }
@@ -725,26 +739,70 @@ function unionLength(spans: ReadonlyArray<[number, number]>): number {
 }
 
 /**
- * Whether a gold room's own centre falls inside a candidate region.
+ * Which candidate region a gold room is, if any.
  *
- * Against the region's *footprint*, never its box. A corridor's box contains
- * most of the rooms off it, and a box test therefore reports that the corridor
- * swallowed rooms it never touched.
+ * By *area*, not by a point. A centroid test asks one pixel a question about a
+ * room, and on a plan the answer is often "that pixel is a wall" — the gold's
+ * stairwell centroid lands on the boundary between the corridor and the
+ * landing, and the room it obviously is then counts as found by nobody. What
+ * is measured instead is how much of the gold room's own polygon each
+ * candidate region covers, and the region covering most of it is the region
+ * standing for it, provided it covers enough of it to be that room at all.
+ *
+ * Against the region's *footprint*, never its box: a corridor's box contains
+ * most of the rooms off it.
  */
-const goldCentreInside = (
+function bestRegionFor(
   g: GoldRoom,
+  rooms: ReadonlyArray<{
+    id: string
+    box: { x0: number; z0: number; x1: number; z1: number }
+    footprint: { cellM: number; cols: number; rows: number; filled: string }
+  }>,
+  alignment: { dx: number; dz: number },
+  opts: EvaluationOptions,
+): string | null {
+  const xs = g.polygon.map((p) => p[0])
+  const zs = g.polygon.map((p) => p[1])
+  const step = opts.roomSampleM
+  const counts = new Map<string, number>()
+  let inside = 0
+  for (let z = Math.min(...zs) + step / 2; z < Math.max(...zs); z += step) {
+    for (let x = Math.min(...xs) + step / 2; x < Math.max(...xs); x += step) {
+      if (!insidePolygon({ x, z }, g.polygon)) continue
+      inside++
+      for (const r of rooms) {
+        if (!footprintCovers(r, x - alignment.dx, z - alignment.dz)) continue
+        counts.set(r.id, (counts.get(r.id) ?? 0) + 1)
+        break
+      }
+    }
+  }
+  if (inside === 0) return null
+  let best: string | null = null
+  let bestN = 0
+  for (const [id, n] of counts) {
+    if (n > bestN) {
+      bestN = n
+      best = id
+    }
+  }
+  return bestN / inside >= opts.roomOverlap ? best : null
+}
+
+/** Whether a point in candidate metres falls on a region's own footprint. */
+const footprintCovers = (
   r: {
     box: { x0: number; z0: number; x1: number; z1: number }
     footprint: { cellM: number; cols: number; rows: number; filled: string }
   },
-  alignment: { dx: number; dz: number },
+  x: number,
+  z: number,
 ): boolean => {
-  const cx = g.polygon.reduce((n, p) => n + p[0], 0) / g.polygon.length - alignment.dx
-  const cz = g.polygon.reduce((n, p) => n + p[1], 0) / g.polygon.length - alignment.dz
-  if (cx < r.box.x0 || cx > r.box.x1 || cz < r.box.z0 || cz > r.box.z1) return false
+  if (x < r.box.x0 || x > r.box.x1 || z < r.box.z0 || z > r.box.z1) return false
   const { cellM, cols, rows, filled } = r.footprint
   if (cols === 0 || rows === 0 || cellM <= 0) return true
-  const col = Math.min(cols - 1, Math.max(0, Math.floor((cx - r.box.x0) / cellM)))
-  const row = Math.min(rows - 1, Math.max(0, Math.floor((cz - r.box.z0) / cellM)))
+  const col = Math.min(cols - 1, Math.max(0, Math.floor((x - r.box.x0) / cellM)))
+  const row = Math.min(rows - 1, Math.max(0, Math.floor((z - r.box.z0) / cellM)))
   return filled[row * cols + col] === '1'
 }

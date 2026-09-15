@@ -52,6 +52,19 @@ for (let i = 0; i < m.labels.length; i++) {
   e.x0 = Math.min(e.x0, x); e.x1 = Math.max(e.x1, x); e.y0 = Math.min(e.y0, y); e.y1 = Math.max(e.y1, y)
   areas.set(id, e)
 }
+console.log('  --- where each gold room\'s centre lands')
+{
+  const frame = s.frame!
+  for (const g of goldRooms) {
+    const cx = g.polygon.reduce((n, q) => n + q[0], 0) / g.polygon.length - al.dx
+    const cz = g.polygon.reduce((n, q) => n + q[1], 0) / g.polygon.length - al.dz
+    const px = Math.round(cx * 100 * frame.pxPerCm + frame.originPx.x)
+    const py = Math.round(cz * 100 * frame.pxPerCm + frame.originPx.y)
+    const id = px >= 0 && py >= 0 && px < m.width && py < m.height ? m.labels[py * m.width + px] : -1
+    const kept = s.rooms.some((r) => r.id === `${want}:rg${id}`)
+    console.log(`    ${g.id.padEnd(18)} centre px ${px},${py} -> ${id < 0 ? 'barrier' : `rg${id}`}${kept ? '' : ' (not kept as a room)'}`)
+  }
+}
 console.log('  --- every enclosed region over 3 m2')
 for (const [id, e] of [...areas].sort((a, b) => b[1].n - a[1].n).slice(0, 14)) {
   const m2 = e.n / (100 * pxPerCm) ** 2

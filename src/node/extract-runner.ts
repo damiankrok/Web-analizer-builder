@@ -28,7 +28,9 @@ import {
 import type { PlanTextReading } from '../core/extract/text-engine.js'
 import { detectWallBands, DEFAULT_WALL_BANDS, type WallBand } from '../core/extract/wall-bands.js'
 import { buildPlanModel, type PlanModel } from '../core/extract/plan-model.js'
-import { detectDoorSymbols, pairDoubleDoors, type DoorDetection } from '../core/extract/door-symbols.js'
+import { detectDoorSymbols, pairDoubleDoors, inkLayers, DEFAULT_DOOR_SYMBOLS, type DoorDetection } from '../core/extract/door-symbols.js'
+import { alignLabelledPlan, findRoomLabels, type LabelAlignment, type RoomLabel } from '../core/extract/room-labels.js'
+import { solidThreshold } from '../core/extract/wall-bands.js'
 import { buildSpecCandidate, type ArchitecturalSpecCandidate } from '../core/extract/spec-candidate.js'
 import { TesseractEngine } from './ocr/tesseract.js'
 
@@ -72,9 +74,11 @@ export type PlanExtraction = {
   walls: WallBand[]
   /** Every door symbol read off this drawing, before any of it is used (§4). */
   doors: DoorDetection
+  /** The area-labelled copy of this floor, and what it was read for (§11, §12). */
+  labels: { assetId: string | null; alignment: LabelAlignment | null; found: RoomLabel[] }
   model: PlanModel
   /** Milliseconds spent in each stage of this plan (§20). */
-  timings: { doorsMs: number; wallsMs: number; topologyMs: number }
+  timings: { doorsMs: number; wallsMs: number; topologyMs: number; labelsMs: number }
   notes: string[]
 }
 
@@ -190,6 +194,48 @@ export function extractPlanSpec(
     }
   }
 
+  /** The area-labelled copy of one floor, aligned onto the dimensioned one. */
+  const readRoomLabels = (
+    p: Prepared,
+    scale: number | null,
+  ): PlanExtraction['labels'] => {
+    const none = { assetId: null, alignment: null, found: [] }
+    if (scale === null || scale <= 0) return none
+    const sibling = pkg.assets.find(
+      (a) =>
+        a.roles?.document === 'FLOOR_PLAN' &&
+        a.roles.storey === p.storey &&
+        a.roles.annotation === 'AREA_LABELS' &&
+        a.id !== p.assetId,
+    )
+    const image = sibling ? images.get(sibling.id) : undefined
+    if (!sibling || !image) return none
+    const labelled = inkChannel(image)
+    if (labelled.width !== p.gray.width || labelled.height !== p.gray.height) {
+      return {
+        assetId: sibling.id,
+        alignment: {
+          dx: 0,
+          dy: 0,
+          agreement: 0,
+          aligned: false,
+          why: `the two copies of this floor are ${p.gray.width}x${p.gray.height} and ${labelled.width}x${labelled.height}, which cannot be placed over each other by a shift`,
+        },
+        found: [],
+      }
+    }
+    const solidHere = solidThreshold(p.gray, DEFAULT_WALL_BANDS.solidFraction)
+    const solidThere = solidThreshold(labelled, DEFAULT_WALL_BANDS.solidFraction)
+    const here = inkLayers(p.gray, solidHere, DEFAULT_DOOR_SYMBOLS)
+    const there = inkLayers(labelled, solidThere, DEFAULT_DOOR_SYMBOLS)
+    const alignment = alignLabelledPlan(here.fabric, there.fabric, p.gray.width, p.gray.height)
+    return {
+      assetId: sibling.id,
+      alignment,
+      found: findRoomLabels(labelled, here.ink, solidThere, alignment, scale),
+    }
+  }
+
   const plans: PlanExtraction[] = prepared.map((p) => {
     const built = final.get(p.assetId)!
     // Walls are measured at the scale the chains established, because their
@@ -207,8 +253,13 @@ export function extractPlanSpec(
     const doors: DoorDetection =
       scale === null ? detected : { ...detected, doors: pairDoubleDoors(detected.doors, scale) }
     const t2 = Date.now()
-    const model = buildPlanModel(p.gray, walls.bands, scale, undefined, doors.doors)
+    // §11, §12: the area-labelled copy of the same floor says how many spaces
+    // the source names. It may not move a wall, and it does not: what is done
+    // with it is to record, unresolved, that one region carries two names.
+    const labels = readRoomLabels(p, scale)
     const t3 = Date.now()
+    const model = buildPlanModel(p.gray, walls.bands, scale, undefined, doors.doors, undefined, labels.found)
+    const t4 = Date.now()
     return {
       storey: p.storey,
       assetId: p.assetId,
@@ -222,14 +273,18 @@ export function extractPlanSpec(
       distortion: built.distortion,
       walls: walls.bands,
       doors,
+      labels,
       model,
-      timings: { wallsMs: t1 - t0, doorsMs: t2 - t1, topologyMs: t3 - t2 },
+      timings: { wallsMs: t1 - t0, doorsMs: t2 - t1, labelsMs: t3 - t2, topologyMs: t4 - t3 },
       notes: [
         `${p.regions.length} text-region readings offered`,
         ...p.structures.notes,
         ...built.notes,
         ...walls.notes,
         ...doors.notes,
+        labels.alignment
+          ? `the area-labelled copy ${labels.assetId}: ${labels.alignment.why}; ${labels.found.length} labels placed`
+          : 'this floor publishes no area-labelled copy, so there is no label evidence about its spaces',
         ...model.notes,
       ],
     }

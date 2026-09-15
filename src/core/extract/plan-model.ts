@@ -32,6 +32,7 @@
 import type { GrayImage } from '../contracts/raster.js'
 import { solidThreshold, DEFAULT_WALL_BANDS, type WallBand } from './wall-bands.js'
 import { inkLayers, DEFAULT_DOOR_SYMBOLS, type DoorObservation } from './door-symbols.js'
+import type { RoomLabel } from './room-labels.js'
 import {
   classifyOpenings,
   closeAtCrossings,
@@ -319,6 +320,15 @@ export type RoomRegion = {
   /** Whether the region touches the drawing's border: the outside, not a room. */
   touchesEdge: boolean
   /**
+   * Room labels the source prints inside this region (§11, §12).
+   *
+   * More than one means the source names more than one space here and the
+   * extraction returned them as one. That is a question, not a licence to
+   * divide the region: §11 forbids inventing a wall to split an open plan, so
+   * what is done with it is to record it unresolved.
+   */
+  labels: string[]
+  /**
    * Which parts of the region's own box the region actually covers, as a
    * coarse grid of cells over that box.
    *
@@ -355,6 +365,8 @@ export type PlanModel = {
   /** The doors that were read, and where each of them was hung (§9). */
   doors: DoorObservation[]
   placements: DoorPlacement[]
+  /** The room labels the source prints, placed in this drawing's pixels. */
+  roomLabels: RoomLabel[]
   /** The boundary model rooms were flooded against (§10). */
   separators: Separator[]
   /** Region id per pixel, or -1. Kept so a caller can measure what it likes. */
@@ -381,12 +393,17 @@ export type PlanModel = {
 function barrierMask(
   gray: GrayImage,
   runs: readonly WallRun[],
-  solid: number,
+  fabric: Uint8Array,
   width: number,
   height: number,
 ): Uint8Array {
   const mask = new Uint8Array(width * height)
-  for (let i = 0; i < mask.length; i++) if (gray.data[i] <= solid) mask[i] = 1
+  // Fabric, not ink. A stair tread, a worktop, a car, a dimension line and a
+  // room's number are all ink, and none of them stops a room: flooding against
+  // ink returns a staircase as fifteen slivers of a tenth of a square metre
+  // each and a kitchen chopped up by its own units. What a room ends at is
+  // material, which is the ink thick enough to be a wall.
+  for (let i = 0; i < mask.length; i++) if (fabric[i] === 1) mask[i] = 1
   for (const run of runs) {
     const near = Math.floor(run.nearPx)
     const far = Math.ceil(run.farPx)
@@ -462,6 +479,7 @@ function floodRegions(
       box: { x0, y0, x1, y1 },
       centroid: { x: sx / areaPx, y: sy / areaPx },
       touchesEdge,
+      labels: [],
       occupancy: { cols: 0, rows: 0, cellPx: 1, filled: new Uint8Array(0) },
     })
   }
@@ -555,6 +573,7 @@ export function buildPlanModel(
   opts: PlanModelOptions = DEFAULT_PLAN_MODEL,
   doors: readonly DoorObservation[] = [],
   topology: TopologyOptions = DEFAULT_TOPOLOGY,
+  roomLabels: readonly RoomLabel[] = [],
 ): PlanModel {
   const { width, height } = gray
   if (pxPerCm === null || pxPerCm <= 0 || (bands.length === 0 && doors.length === 0)) {
@@ -562,6 +581,7 @@ export function buildPlanModel(
       runs: [],
       rooms: [],
       adjacency: [],
+      roomLabels: [],
       doors: [],
       placements: [],
       separators: [],
@@ -587,7 +607,7 @@ export function buildPlanModel(
   // from one between two rooms. Found with every wall line closed, because a
   // window is drawn as line work and a flood that leaks through every window
   // cannot tell inside from outside.
-  const closed = barrierMask(gray, carried.runs, solid, width, height)
+  const closed = barrierMask(gray, carried.runs, fabric, width, height)
   const around = floodRegions(closed, width, height)
   const outsideIds = new Set(
     around.regions.filter((r) => r.touchesEdge).map((r) => around.regions.indexOf(r)),
@@ -607,20 +627,31 @@ export function buildPlanModel(
   // room is not continuous through an opening — never the other way round.
   const separators = separatorsOf(runs)
   const mask = new Uint8Array(width * height)
-  for (let i = 0; i < mask.length; i++) if (gray.data[i] <= solid) mask[i] = 1
+  for (let i = 0; i < mask.length; i++) if (fabric[i] === 1) mask[i] = 1
   paintSeparators(mask, separators, width, height)
-  const { labels, regions } = floodRegions(mask, width, height)
+  const flooded = floodRegions(mask, width, height)
+  const regions = flooded.regions
+  const labelsAt = (x: number, y: number): number => flooded.labels[y * width + x]
   // A quarter of a metre: fine enough to tell a corridor from the rooms its
   // box contains, coarse enough to stay a few hundred cells.
-  measureOccupancy(regions, labels, width, Math.max(1, Math.round(0.25 * 100 * pxPerCm)))
+  measureOccupancy(regions, flooded.labels, width, Math.max(1, Math.round(0.25 * 100 * pxPerCm)))
 
   const minAreaPx = opts.minRoomAreaM2 * (100 * pxPerCm) ** 2
   // A region touching the sheet's border is the space around the building, not
   // a room in it. That is a statement about where the drawing ends, not about
   // any publisher's layout.
+  // §12: a label says how many spaces the source names here, and nothing
+  // about where any boundary is.
+  for (const label of roomLabels) {
+    const x = Math.round(label.centre.x)
+    const y = Math.round(label.centre.y)
+    if (x < 0 || y < 0 || x >= width || y >= height) continue
+    const id = labelsAt(x, y)
+    if (id >= 0) regions[id].labels.push(label.id)
+  }
   const rooms = regions.filter((r) => !r.touchesEdge && r.areaPx >= minAreaPx)
   const keep = new Set(rooms.map((r) => r.id))
-  const adjacency = readAdjacency(runs, labels, regions, width, height, keep)
+  const adjacency = readAdjacency(runs, flooded.labels, regions, width, height, keep)
 
   const openings = runs.reduce((n, r) => n + r.openings.length, 0)
   const counts = classified.counts
@@ -630,8 +661,9 @@ export function buildPlanModel(
     adjacency,
     doors: [...doors],
     placements: placed.placements,
+    roomLabels: [...roomLabels],
     separators,
-    labels,
+    labels: flooded.labels,
     width,
     height,
     notes: [
@@ -645,6 +677,8 @@ export function buildPlanModel(
         `${counts.EXTERIOR_OPENING} onto the outside, ${counts.UNKNOWN_GAP} unexplained`,
       `${separators.length} pieces of boundary: ${separators.filter((s2) => s2.kind === 'FABRIC').length} material, ` +
         `${separators.filter((s2) => s2.kind !== 'FABRIC').length} separators that are not material`,
+      `${roomLabels.length} room labels read from the area-labelled copy, ` +
+        `${rooms.filter((r) => r.labels.length > 1).length} regions carrying more than one`,
       `${regions.length} enclosed regions, ${rooms.length} kept as rooms ` +
         `(>= ${opts.minRoomAreaM2} m² and not touching the sheet edge)`,
       `${adjacency.length} room-to-room adjacencies, ` +

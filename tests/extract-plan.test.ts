@@ -179,6 +179,7 @@ describe('§17 a candidate says it is a candidate', () => {
     adjacency: [],
     doors: [],
     placements: [],
+    roomLabels: [],
     separators: [],
     labels: new Int32Array(0),
     width: 0,
