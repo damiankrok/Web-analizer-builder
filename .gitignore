@@ -8,3 +8,4 @@ dist-ui/
 dist-standalone/
 dist-standalone-src/
 src/web/bundled/
+dist-owner-checkpoint/

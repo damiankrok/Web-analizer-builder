@@ -1,0 +1,648 @@
+<title>Marcówki Checkpoint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* A drawing sheet: warm paper, black line work, the red these plans annotate in. */
+  :root {
+    --paper: #f6f4ef;
+    --sheet: #fffdf8;
+    --rule: #ddd8cd;
+    --rule-soft: #e9e5db;
+    --ink: #191c20;
+    --graphite: #6e6a62;
+    --auto: #2563a8;
+    --auto-soft: #e4edf7;
+    --gold: #2e3338;
+    --gold-soft: #e7e5e0;
+    --annot: #c1121f;
+    --annot-soft: #fbe9ea;
+    --amber: #a9700b;
+    --amber-soft: #f9efdc;
+    --ok: #2f6b45;
+    --ok-soft: #e4efe7;
+    --canvas-bg: #eceae4;
+    --shadow: 0 1px 0 rgba(25, 28, 32, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #16181b;
+      --sheet: #1d2024;
+      --rule: #32363b;
+      --rule-soft: #272b30;
+      --ink: #e9e6e0;
+      --graphite: #9d978c;
+      --auto: #74aae6;
+      --auto-soft: #1d2a38;
+      --gold: #cfcbc3;
+      --gold-soft: #262a2e;
+      --annot: #f4808b;
+      --annot-soft: #35201f;
+      --amber: #e0a63f;
+      --amber-soft: #322715;
+      --ok: #7cc496;
+      --ok-soft: #1c2a21;
+      --canvas-bg: #101214;
+      --shadow: 0 1px 0 rgba(0, 0, 0, .3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #16181b;
+    --sheet: #1d2024;
+    --rule: #32363b;
+    --rule-soft: #272b30;
+    --ink: #e9e6e0;
+    --graphite: #9d978c;
+    --auto: #74aae6;
+    --auto-soft: #1d2a38;
+    --gold: #cfcbc3;
+    --gold-soft: #262a2e;
+    --annot: #f4808b;
+    --annot-soft: #35201f;
+    --amber: #e0a63f;
+    --amber-soft: #322715;
+    --ok: #7cc496;
+    --ok-soft: #1c2a21;
+    --canvas-bg: #101214;
+    --shadow: 0 1px 0 rgba(0, 0, 0, .3);
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding-inline: 16px; padding-block: 0 44px; }
+
+  /* --- masthead ------------------------------------------------------- */
+  .mast { padding-block: 18px 12px; border-bottom: 1px solid var(--rule); }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--graphite); margin: 0 0 6px;
+  }
+  h1 { font-size: 21px; font-weight: 600; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+  .sub { margin: 6px 0 0; color: var(--graphite); font-size: 13.5px; max-width: 62ch; }
+
+  .warn {
+    margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--annot);
+    background: var(--annot-soft); color: var(--ink); font-size: 13px; border-radius: 0 3px 3px 0;
+  }
+  .warn b { font-weight: 600; }
+
+  /* --- viewer --------------------------------------------------------- */
+  .stage { position: relative; margin-top: 14px; background: var(--canvas-bg);
+           border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+  .stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  #canvasHost { width: 100%; height: clamp(260px, 42vh, 440px); position: relative; }
+  #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  #labels span {
+    position: absolute; transform: translate(-50%, -50%);
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 9.5px;
+    padding: 1px 3px; border-radius: 2px; white-space: nowrap;
+    background: color-mix(in srgb, var(--sheet) 88%, transparent); color: var(--ink);
+    border: 1px solid var(--rule);
+  }
+  .hint {
+    position: absolute; left: 8px; bottom: 8px; font-size: 10px; color: var(--graphite);
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    background: color-mix(in srgb, var(--sheet) 80%, transparent);
+    padding: 3px 6px; border-radius: 2px; pointer-events: none;
+  }
+
+  /* --- controls ------------------------------------------------------- */
+  .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 12px;
+           border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; background: var(--sheet); }
+  .modes button {
+    appearance: none; border: 0; background: transparent; color: var(--graphite);
+    font: inherit; font-size: 12.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+    padding: 10px 4px; cursor: pointer; border-right: 1px solid var(--rule);
+  }
+  .modes button:last-child { border-right: 0; }
+  .modes button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  .modes button:focus-visible { outline: 2px solid var(--auto); outline-offset: -2px; }
+
+  .rail { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip {
+    appearance: none; font: inherit; font-size: 12px; cursor: pointer;
+    background: var(--sheet); color: var(--graphite);
+    border: 1px solid var(--rule); border-radius: 999px; padding: 5px 11px;
+  }
+  .chip[aria-pressed="true"] { background: var(--auto-soft); color: var(--auto); border-color: var(--auto); font-weight: 500; }
+  .chip:focus-visible { outline: 2px solid var(--auto); outline-offset: 1px; }
+  .rail .spacer { flex-basis: 100%; height: 0; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 10px; font-size: 11.5px; color: var(--graphite); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 11px; height: 11px; border-radius: 2px; flex: none; border: 1px solid rgba(0,0,0,.18); }
+
+  /* --- panels --------------------------------------------------------- */
+  section { margin-top: 28px; }
+  h2 {
+    font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--graphite); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--rule);
+  }
+  h3 { font-size: 13.5px; font-weight: 600; margin: 18px 0 8px; }
+
+  .mono { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+  /* the section's own level ladder */
+  .ladder { list-style: none; margin: 0; padding: 0; }
+  .ladder li {
+    display: grid; grid-template-columns: 5.2em 1fr auto; gap: 10px; align-items: baseline;
+    padding: 7px 0; border-bottom: 1px dashed var(--rule-soft);
+  }
+  .ladder .v { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums;
+               font-size: 13.5px; font-weight: 500; text-align: right; }
+  .ladder .n { font-size: 13.5px; }
+  .ladder li.absent .v, .ladder li.absent .n { color: var(--annot); }
+
+  .pill {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10px; font-weight: 500;
+    letter-spacing: .04em; text-transform: uppercase; padding: 2px 6px; border-radius: 3px; white-space: nowrap;
+  }
+  .p-ok { background: var(--ok-soft); color: var(--ok); }
+  .p-warn { background: var(--amber-soft); color: var(--amber); }
+  .p-bad { background: var(--annot-soft); color: var(--annot); }
+  .p-neutral { background: var(--gold-soft); color: var(--graphite); }
+
+  .kv { list-style: none; margin: 0; padding: 0; }
+  .kv li { display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
+           padding: 7px 0; border-bottom: 1px solid var(--rule-soft); }
+  .kv .k { font-size: 13.5px; }
+  .kv .k small { display: block; color: var(--graphite); font-size: 11.5px; line-height: 1.4; }
+  .kv .val { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums;
+             font-size: 13px; text-align: right; white-space: nowrap; }
+
+  .targets { list-style: none; margin: 0; padding: 0; }
+  .targets li { display: grid; grid-template-columns: auto 1fr; gap: 9px; padding: 8px 0;
+                border-bottom: 1px solid var(--rule-soft); font-size: 13px; }
+  .targets .m { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; color: var(--graphite); }
+
+  details { border-top: 1px solid var(--rule-soft); }
+  details > summary {
+    cursor: pointer; padding: 9px 0; font-size: 13.5px; font-weight: 500; list-style: none;
+    display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
+  }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary::after { content: "+"; color: var(--graphite); font-family: "IBM Plex Mono", monospace; }
+  details[open] > summary::after { content: "\2212"; }
+  details .body { padding: 0 0 12px; font-size: 13px; color: var(--ink); }
+  details .body p { margin: 0 0 8px; }
+  details .body .obs { margin: 0 0 8px; padding-left: 12px; border-left: 2px solid var(--rule); color: var(--graphite); }
+
+  .drawings { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .drawings figure { margin: 0; border: 1px solid var(--rule); border-radius: 3px; background: var(--sheet); overflow: hidden; }
+  .drawings img { display: block; width: 100%; height: auto; background: #fff; }
+  .drawings figcaption { padding: 7px 8px; font-size: 11.5px; line-height: 1.35; }
+  .drawings figcaption b { display: block; font-weight: 600; font-size: 12px; }
+  .drawings figcaption span { color: var(--graphite); }
+
+  footer { margin-top: 32px; padding-top: 14px; border-top: 1px solid var(--rule);
+           font-size: 11.5px; color: var(--graphite); }
+  footer code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; word-break: break-all; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <p class="eyebrow">Owner visual checkpoint · Project A</p>
+    <h1>Dom w marcówkach (GE)</h1>
+    <p class="sub">What the automatic reading of the published drawings produces today, beside the
+      hand-verified model proven in Stages 02–05A. Nothing here was tuned for the picture.</p>
+    <p class="warn"><b>This is a research visual checkpoint.</b> GOLD is development reference only and is
+      not used by automatic extraction. No gold value fills a gap in the automatic candidate — where the
+      candidate does not know something, it is drawn as unresolved or left out and listed.</p>
+  </header>
+
+  <div class="stage">
+    <div id="canvasHost"></div>
+    <div id="labels"></div>
+    <div class="hint" id="hint">drag to orbit · two fingers to pan · pinch to zoom</div>
+  </div>
+
+  <div class="modes" role="group" aria-label="Which model to show">
+    <button type="button" id="mAuto" aria-pressed="true">Automatic</button>
+    <button type="button" id="mGold" aria-pressed="false">Gold</button>
+    <button type="button" id="mBoth" aria-pressed="false">Overlay</button>
+  </div>
+
+  <div class="rail">
+    <button type="button" class="chip" id="tRoof" aria-pressed="true">Roof</button>
+    <button type="button" class="chip" id="tGround" aria-pressed="true">Ground floor</button>
+    <button type="button" class="chip" id="tAttic" aria-pressed="true">Attic</button>
+    <span class="spacer"></span>
+    <button type="button" class="chip" id="tExplode" aria-pressed="false">Explode floors</button>
+    <button type="button" class="chip" id="tIds" aria-pressed="false">Element ids</button>
+    <button type="button" class="chip" id="tReset" aria-pressed="false">Reset view</button>
+  </div>
+
+  <div class="legend" id="legend"></div>
+
+  <section>
+    <h2>Levels the section reading recovered</h2>
+    <ul class="ladder" id="ladder"></ul>
+    <p class="sub" style="margin-top:10px">Printed on the section as <span class="mono">−0,32 · ±0,00 · +3,06 · +4,67 · +7,95</span>.
+      The knee-wall top is the one source-clear level this reading does not find, so every attic wall above
+      is drawn to the eave and marked unresolved rather than given a height nothing measured.</p>
+  </section>
+
+  <section>
+    <h2>Automatic floor plan against gold</h2>
+    <div id="planTables"></div>
+  </section>
+
+  <section>
+    <h2>Roof, facade and features</h2>
+    <ul class="kv" id="shellKv"></ul>
+  </section>
+
+  <section>
+    <h2>Reported, but not placeable in 3D</h2>
+    <p class="sub" style="margin:0 0 10px">The candidate found these and cannot say where they go. They are
+      listed rather than drawn, and no gold position was borrowed for any of them.</p>
+    <div id="undrawable"></div>
+  </section>
+
+  <section>
+    <h2>Cross-source conflicts left open</h2>
+    <div id="conflicts"></div>
+  </section>
+
+  <section>
+    <h2>Stage-07 acceptance, as measured</h2>
+    <ul class="targets" id="targets"></ul>
+  </section>
+
+  <section>
+    <h2>Source drawings the reading was made from</h2>
+    <div class="drawings" id="drawings"></div>
+  </section>
+
+  <footer>
+    <p><b>Commit</b> <code id="commit"></code></p>
+    <p><b>Source package</b> <code id="pkg"></code></p>
+    <p id="genLine"></p>
+    <p>AUTOMATIC geometry comes from <code>out/shell/A-marcowki/spec-candidate.json</code>, written by the
+      frozen Stage-06A and Stage-07 runs. GOLD geometry is compiled from
+      <code>research/gold/marcowki-*.json</code> by the same fixture the Stage-05A tests use. The two are
+      never mixed: the checkpoint adapter reads no gold file, and a test asserts it cannot.</p>
+  </footer>
+</div>
+
+<script id="scene" type="application/json">/*__SCENE__*/</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  var DATA = JSON.parse(document.getElementById('scene').textContent);
+  var css = getComputedStyle(document.documentElement);
+  function tok(name, fallback) { var v = css.getPropertyValue(name).trim(); return v || fallback; }
+
+  /* --- how each kind of thing is drawn ---------------------------------
+     Automatic and gold are deliberately different objects on screen: gold is a
+     pale reference volume you can see through, automatic is coloured surface.
+     Colour carries state, not decoration - blue is stated, amber is a
+     dimension the candidate did not settle, red is something it reports and
+     cannot identify. */
+  var GLASSY = { GLASS: 1, ROOF_GLAZING: 1, RAILING_GLASS: 1, DOOR_PANEL: 1, GARAGE_PANEL: 1 };
+
+  function autoStyle(part, resolution) {
+    if (part === 'AUTO_ROOM') return { color: 0xb9cde0, opacity: 0.5, flat: true };
+    if (part === 'AUTO_ROOM_UNRESOLVED') return { color: 0xd4a3a6, opacity: 0.5, flat: true };
+    if (part === 'AUTO_UNKNOWN_GAP') return { color: 0xb02a33, opacity: 0.66 };
+    if (part === 'AUTO_OPENING') return { color: 0x6f9fcc, opacity: 0.4 };
+    if (part === 'AUTO_GLASS') return { color: 0x4f9aa8, opacity: 0.52 };
+    if (part === 'AUTO_ROOF') return { color: 0xb08a3c, opacity: 0.6, wire: true };
+    if (resolution === 'PARTLY_UNRESOLVED') return { color: 0xb59156, opacity: 1 };
+    return { color: 0x3d6f9e, opacity: 1 };
+  }
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(tok('--canvas-bg', '#eceae4'));
+  var host = document.getElementById('canvasHost');
+  var labelHost = document.getElementById('labels');
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  host.appendChild(renderer.domElement);
+  var camera = new THREE.PerspectiveCamera(40, 1, 0.05, 900);
+
+  // Enough light to read the form, not enough to blow the palette out: these
+  // surfaces carry meaning by colour, so they have to stay the colour they are.
+  scene.add(new THREE.AmbientLight(0xffffff, 0.62));
+  var key = new THREE.DirectionalLight(0xffffff, 0.78); key.position.set(-9, 15, 11); scene.add(key);
+  var fill = new THREE.DirectionalLight(0xffffff, 0.3); fill.position.set(11, 7, -9); scene.add(fill);
+
+  var meshes = [];
+  var bounds = new THREE.Box3();
+
+  function addGroup(g, which) {
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(g.positions, 3));
+    geo.computeVertexNormals();
+    geo.computeBoundingBox();
+    var glassy = GLASSY[g.part] || /GLAZ|GLASS|PANEL/.test(g.part);
+    var style = which === 'auto'
+      ? autoStyle(g.part, g.resolution)
+      : { color: 0x8c9096, opacity: glassy ? 0.28 : 1 };
+    var mat = new THREE.MeshLambertMaterial({
+      color: style.color,
+      side: THREE.DoubleSide,
+      transparent: style.opacity < 1,
+      opacity: style.opacity,
+      depthWrite: style.opacity >= 0.95
+    });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.renderOrder = style.opacity < 1 ? 2 : 1;
+    scene.add(mesh);
+    var rec = { mesh: mesh, group: g, which: which, mat: mat, base: style, edges: null };
+    if (which === 'auto' && (style.wire || g.resolution === 'FRAME_UNREGISTERED')) {
+      var e = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geo, 25),
+        new THREE.LineBasicMaterial({ color: 0x8a5a06 })
+      );
+      scene.add(e); rec.edges = e;
+    }
+    meshes.push(rec);
+    bounds.union(geo.boundingBox);
+  }
+
+  DATA.automatic.groups.forEach(function (g) { addGroup(g, 'auto'); });
+  DATA.gold.groups.forEach(function (g) { addGroup(g, 'gold'); });
+
+  var centre = bounds.getCenter(new THREE.Vector3());
+  var radius = Math.max(2, bounds.getSize(new THREE.Vector3()).length() / 2);
+
+  /* --- state ---------------------------------------------------------- */
+  var state = { mode: 'auto', roof: true, ground: true, attic: true, explode: false, ids: false };
+
+  function visible(rec) {
+    if (state.mode === 'auto' && rec.which !== 'auto') return false;
+    if (state.mode === 'gold' && rec.which !== 'gold') return false;
+    var s = rec.group.storey;
+    if (s === 'ROOF') return state.roof;
+    if (s === 'GROUND') return state.ground;
+    if (s === 'UPPER_ATTIC') return state.attic;
+    return true;
+  }
+
+  function apply() {
+    var lift = state.explode ? Math.max(2.5, radius * 0.35) : 0;
+    meshes.forEach(function (rec) {
+      var v = visible(rec);
+      rec.mesh.visible = v;
+      if (rec.edges) rec.edges.visible = v;
+      var s = rec.group.storey;
+      var y = s === 'UPPER_ATTIC' ? lift : s === 'ROOF' ? lift * 2 : 0;
+      rec.mesh.position.y = y;
+      if (rec.edges) rec.edges.position.y = y;
+      // In overlay the gold model steps back to a pale reference volume so the
+      // automatic surfaces read on top of it rather than fighting them.
+      var overlay = state.mode === 'both';
+      if (rec.which === 'gold') {
+        rec.mat.opacity = overlay ? 0.22 : rec.base.opacity;
+        rec.mat.transparent = overlay ? true : rec.base.opacity < 1;
+        rec.mat.depthWrite = overlay ? false : rec.base.opacity >= 0.95;
+        rec.mesh.renderOrder = overlay ? 0 : rec.mesh.renderOrder;
+      }
+      rec.mat.needsUpdate = true;
+    });
+    draw();
+  }
+
+  /* --- camera --------------------------------------------------------- */
+  var az = 0.72, el = 0.36, dist = radius * 2.5;
+  var target = centre.clone();
+  /** The distance at which the model's bounding sphere fits this viewport. */
+  function fitDistance() {
+    var vFov = (camera.fov * Math.PI) / 180;
+    var hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+    return (radius * 1.12) / Math.sin(Math.min(vFov, hFov) / 2);
+  }
+  function place() {
+    camera.position.set(
+      target.x + Math.sin(az) * Math.cos(el) * dist,
+      target.y + Math.sin(el) * dist,
+      target.z + Math.cos(az) * Math.cos(el) * dist
+    );
+    camera.lookAt(target);
+  }
+  function resetView() { az = 0.72; el = 0.36; dist = fitDistance(); target = centre.clone(); place(); draw(); }
+
+  var labelPool = [];
+  function draw() {
+    renderer.render(scene, camera);
+    // Element ids are projected each frame rather than carried as sprites: the
+    // set is small and this keeps them crisp at any zoom.
+    var n = 0;
+    if (state.ids) {
+      var v = new THREE.Vector3();
+      var w = renderer.domElement.clientWidth, h = renderer.domElement.clientHeight;
+      for (var i = 0; i < meshes.length && n < 90; i++) {
+        var rec = meshes[i];
+        if (!rec.mesh.visible || rec.which !== (state.mode === 'gold' ? 'gold' : 'auto')) continue;
+        var pos = rec.group.positions, els = rec.group.elements;
+        for (var e = 0; e < els.length && n < 90; e++) {
+          var t0 = els[e].from * 9;
+          v.set(pos[t0], pos[t0 + 1], pos[t0 + 2]).add(rec.mesh.position).project(camera);
+          if (v.z > 1) continue;
+          var x = (v.x * 0.5 + 0.5) * w, y = (-v.y * 0.5 + 0.5) * h;
+          if (x < 0 || y < 0 || x > w || y > h) continue;
+          var span = labelPool[n] || (labelPool[n] = labelHost.appendChild(document.createElement('span')));
+          span.textContent = els[e].id.replace(/^(GROUND|UPPER_ATTIC):/, '');
+          span.style.left = x + 'px'; span.style.top = y + 'px'; span.hidden = false;
+          n++;
+        }
+      }
+    }
+    for (var k = n; k < labelPool.length; k++) labelPool[k].hidden = true;
+  }
+
+  var fitted = false;
+  function resize() {
+    var w = host.clientWidth, h = host.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / Math.max(1, h);
+    camera.updateProjectionMatrix();
+    if (!fitted) { dist = fitDistance(); fitted = true; }
+    place(); draw();
+  }
+
+  /* --- pointer: orbit, pan, pinch -------------------------------------- */
+  var pts = new Map(), lastPinch = 0, mode2 = null, lastMid = null;
+  var el3 = renderer.domElement;
+  el3.addEventListener('pointerdown', function (e) {
+    el3.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    mode2 = pts.size >= 2 ? 'pan' : (e.button === 2 || e.shiftKey ? 'pan' : 'orbit');
+    lastPinch = 0; lastMid = null;
+  });
+  el3.addEventListener('pointermove', function (e) {
+    var p = pts.get(e.pointerId); if (!p) return;
+    var dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    if (pts.size >= 2) {
+      var a = [].concat(Array.from(pts.values()));
+      var d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
+      var mid = { x: (a[0].x + a[1].x) / 2, y: (a[0].y + a[1].y) / 2 };
+      if (lastPinch) dist = Math.max(radius * 0.2, Math.min(radius * 12, dist * (lastPinch / d)));
+      if (lastMid) panBy(mid.x - lastMid.x, mid.y - lastMid.y);
+      lastPinch = d; lastMid = mid;
+    } else if (mode2 === 'pan') {
+      panBy(dx, dy);
+    } else {
+      az -= dx * 0.008;
+      el = Math.max(-0.35, Math.min(1.45, el + dy * 0.006));
+    }
+    place(); draw();
+  });
+  function panBy(dx, dy) {
+    var scale = dist * 0.0016;
+    var right = new THREE.Vector3(Math.cos(az), 0, -Math.sin(az));
+    var up = new THREE.Vector3(0, 1, 0).applyAxisAngle(right, -el);
+    target.addScaledVector(right, -dx * scale).addScaledVector(up, dy * scale);
+  }
+  function release(e) { pts.delete(e.pointerId); lastPinch = 0; lastMid = null; if (pts.size < 2) mode2 = pts.size ? 'orbit' : null; }
+  el3.addEventListener('pointerup', release);
+  el3.addEventListener('pointercancel', release);
+  el3.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  el3.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    dist = Math.max(radius * 0.2, Math.min(radius * 12, dist * (1 + Math.sign(e.deltaY) * 0.11)));
+    place(); draw();
+  }, { passive: false });
+  window.addEventListener('resize', resize);
+
+  /* --- controls ------------------------------------------------------- */
+  function press(id, on) { document.getElementById(id).setAttribute('aria-pressed', on ? 'true' : 'false'); }
+  function setMode(m) {
+    state.mode = m;
+    press('mAuto', m === 'auto'); press('mGold', m === 'gold'); press('mBoth', m === 'both');
+    renderLegend(); apply();
+  }
+  document.getElementById('mAuto').onclick = function () { setMode('auto'); };
+  document.getElementById('mGold').onclick = function () { setMode('gold'); };
+  document.getElementById('mBoth').onclick = function () { setMode('both'); };
+  function toggle(id, keyName) {
+    document.getElementById(id).onclick = function () {
+      state[keyName] = !state[keyName];
+      press(id, state[keyName]);
+      apply();
+    };
+  }
+  toggle('tRoof', 'roof'); toggle('tGround', 'ground'); toggle('tAttic', 'attic');
+  toggle('tExplode', 'explode'); toggle('tIds', 'ids');
+  document.getElementById('tReset').onclick = function () { resetView(); };
+
+  function sw(hex) { return '<i class="sw" style="background:' + hex + '"></i>'; }
+  function renderLegend() {
+    var L = document.getElementById('legend');
+    var rows = [];
+    if (state.mode !== 'gold') {
+      rows.push([sw('#3d6f9e'), 'automatic, stated']);
+      rows.push([sw('#b59156'), 'automatic, a dimension not settled']);
+      rows.push([sw('#b02a33'), 'gap the candidate cannot identify']);
+      rows.push([sw('#b08a3c'), 'roof — section frame, not registered to the plans']);
+    }
+    if (state.mode !== 'auto') rows.push([sw('#8c9096'), state.mode === 'both' ? 'gold, shown as a reference volume' : 'gold, source-verified']);
+    L.innerHTML = rows.map(function (r) { return '<span>' + r[0] + r[1] + '</span>'; }).join('');
+  }
+
+  /* --- panels --------------------------------------------------------- */
+  var T = DATA.truth;
+  function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+  function fixed(n, d) { return n === null || n === undefined ? '—' : Number(n).toFixed(d); }
+  function pct(n) { return n === null || n === undefined ? '—' : (n * 100).toFixed(1) + '%'; }
+
+  var NAMES = {
+    TERRAIN: 'terrain', GROUND_ZERO: 'ground floor level', STOREY_FLOOR: 'attic floor',
+    KNEE_WALL_TOP: 'knee-wall top', EAVE: 'eave', RIDGE: 'ridge', SLAB_TOP: 'slab top',
+    BUILDING_TOP: 'building top', UNKNOWN: 'unidentified'
+  };
+  var ladder = T.levels.slice().sort(function (a, b) { return (b.valueM || 0) - (a.valueM || 0); });
+  var kneeAt = ladder.findIndex(function (l) { return (l.valueM || 0) < 4.36; });
+  var rows = ladder.map(function (l) {
+    return '<li><span class="v">' + (l.valueM >= 0 ? '+' : '') + fixed(l.valueM, 2) + ' m</span>' +
+      '<span class="n">' + esc(NAMES[l.role] || l.role) + '</span>' +
+      '<span class="pill p-ok">' + esc(l.fidelity || l.status) + '</span></li>';
+  });
+  rows.splice(kneeAt < 0 ? rows.length : kneeAt, 0,
+    '<li class="absent"><span class="v">+4.36 m</span><span class="n">knee-wall top — not recovered</span>' +
+    '<span class="pill p-bad">absent</span></li>');
+  document.getElementById('ladder').innerHTML = rows.join('');
+
+  document.getElementById('planTables').innerHTML = T.floorPlan.map(function (s) {
+    var name = s.storey === 'GROUND' ? 'Ground floor' : 'Attic';
+    function row(k, note, val, pill) {
+      return '<li><span class="k">' + k + (note ? '<small>' + note + '</small>' : '') + '</span>' +
+        '<span class="val">' + val + (pill ? ' <span class="pill ' + pill[0] + '">' + pill[1] + '</span>' : '') + '</span></li>';
+    }
+    return '<h3>' + name + '</h3><ul class="kv">' +
+      row('Wall fabric matched', 'of ' + fixed(s.wallGoldM, 2) + ' m of gold wall', fixed(s.wallMatchedM, 2) + ' m &middot; ' + pct(s.wallCoverage), null) +
+      row('Wall line recovered', 'fabric and its openings together', pct(s.logicalCoverage), s.logicalCoverage >= 0.9 ? ['p-ok', 'ok'] : ['p-warn', 'short']) +
+      row('Room adjacency', s.adjacencyAgreed + ' of ' + s.adjacencyEdges + ' gold edges', pct(s.adjacencyRate), s.adjacencyRate >= 0.9 ? ['p-ok', 'ok'] : ['p-warn', 'short']) +
+      row('Doors', 'detected on the right host wall', s.doorsDetected + ' / ' + s.doorsTotal, s.doorsDetected === s.doorsTotal ? ['p-ok', 'all'] : ['p-warn', 'partial']) +
+      row('Rooms', s.rooms.merged + ' region(s) cover more than one gold room', s.rooms.candidateRooms + ' for ' + s.rooms.goldRooms, s.rooms.merged ? ['p-warn', 'merged'] : ['p-ok', 'clean']) +
+      row('Fabric across a gold opening', 'jamb-width overhang, no passage closed', fixed(s.inventedM, 2) + ' m', null) +
+      row('Frame offset from gold', 'display is not corrected for this', fixed(s.alignment.dx, 2) + ', ' + fixed(s.alignment.dz, 2) + ' m',
+        Math.abs(s.alignment.dz) > 1 ? ['p-bad', 'large'] : ['p-ok', 'small']) +
+      '</ul>';
+  }).join('');
+
+  var views = Object.keys(T.facadeOpenings.byView).map(function (v) { return v.toLowerCase() + ' ' + T.facadeOpenings.byView[v]; }).join(' · ');
+  document.getElementById('shellKv').innerHTML = [
+    ['Roof topology', 'the section shows a gable and a flat run beside it', esc(T.roof.topology), ['p-ok', 'match']],
+    ['Roof pitch', 'the drawing prints 40°, two fitted slopes measure 39.95 and 39.97°', fixed(T.roof.pitchDeg, 2) + '°', ['p-ok', 'match']],
+    ['Roof planes', T.roof.components + ' components', String(T.roof.planes), ['p-warn', 'section frame']],
+    ['Facade openings detected', views, String(T.facadeOpenings.detected), null],
+    ['Matched to a plan wall', 'only these can be placed in 3D', T.facadeOpenings.matched + ' / ' + T.facadeOpenings.detected, ['p-warn', '38%']],
+    ['Rooflights', 'no across-plane position settled', String(T.roofOpenings), ['p-bad', 'not placed']],
+    ['Chimney stacks', 'no plan footprint matched', String(T.chimneys), ['p-bad', 'not placed']],
+    ['Facade features', 'depth from the facade not settled', String(T.facadeFeatures), ['p-bad', 'not placed']]
+  ].map(function (r) {
+    return '<li><span class="k">' + r[0] + (r[1] ? '<small>' + r[1] + '</small>' : '') + '</span>' +
+      '<span class="val">' + r[2] + (r[3] ? ' <span class="pill ' + r[3][0] + '">' + r[3][1] + '</span>' : '') + '</span></li>';
+  }).join('');
+
+  var byKind = {};
+  DATA.automatic.undrawable.forEach(function (u) { (byKind[u.kind] = byKind[u.kind] || []).push(u); });
+  document.getElementById('undrawable').innerHTML = Object.keys(byKind).map(function (k) {
+    var list = byKind[k];
+    return '<details><summary><span>' + esc(k.replace(/_/g, ' ').toLowerCase()) + '</span>' +
+      '<span class="pill p-bad">' + list.length + '</span></summary><div class="body">' +
+      list.map(function (u) { return '<p><b class="mono">' + esc(u.id) + '</b> — ' + esc(u.what) + '<br><span style="color:var(--graphite)">' + esc(u.why) + '</span></p>'; }).join('') +
+      '</div></details>';
+  }).join('');
+
+  var all = T.conflicts.concat(T.candidateConflicts || []);
+  document.getElementById('conflicts').innerHTML = all.map(function (c) {
+    return '<details><summary><span>' + esc(c.kind.replace(/_/g, ' ').toLowerCase()) + '</span>' +
+      '<span class="pill p-warn">open</span></summary><div class="body">' +
+      (c.observations || []).map(function (o) { return '<p class="obs">' + esc(o) + '</p>'; }).join('') +
+      '<p>' + esc(c.unresolved) + '</p></div></details>';
+  }).join('');
+
+  document.getElementById('targets').innerHTML = T.passTargets.map(function (t) {
+    return '<li><span class="pill ' + (t.met ? 'p-ok' : 'p-bad') + '">' + (t.met ? 'met' : 'not met') + '</span>' +
+      '<span>' + esc(t.target.replace(/^§30\s*/, '')) + '<br><span class="m">' + esc(t.measured) + '</span></span></li>';
+  }).join('');
+
+  document.getElementById('drawings').innerHTML = DATA.drawings.map(function (d) {
+    return '<figure><img src="' + esc(d.file) + '" alt="' + esc(d.label) + '" loading="lazy" width="' + d.width + '" height="' + d.height + '">' +
+      '<figcaption><b>' + esc(d.label) + '</b><span>' + esc(d.usedFor) + '</span></figcaption></figure>';
+  }).join('');
+
+  document.getElementById('commit').textContent = DATA.commit;
+  document.getElementById('pkg').textContent = DATA.sourcePackage.id + ' · ' + DATA.sourcePackage.hash.slice(0, 32);
+  document.getElementById('genLine').innerHTML = '<b>Stage status</b> ' +
+    T.stageTokens.map(function (s) { return '<code>' + esc(s.token) + '</code>'; }).join(' · ');
+
+  renderLegend();
+  resize();
+  apply();
+  setTimeout(function () { var h = document.getElementById('hint'); if (h) h.hidden = true; }, 3500);
+})();
+</script>

@@ -8,6 +8,8 @@
     "analyze": "tsx src/node/cli.ts analyze",
     "bench": "tsx src/node/cli.ts bench",
     "build": "tsc -p tsconfig.json",
+    "checkpoint:build": "tsx scripts/owner-checkpoint.ts",
+    "checkpoint:verify": "node scripts/owner-checkpoint-verify.mjs",
     "extract:evaluate": "tsx scripts/evaluate-candidate.ts",
     "extract:freeze": "tsx scripts/freeze-spec.ts",
     "extract:holdout": "tsx scripts/holdout-spec.ts",
