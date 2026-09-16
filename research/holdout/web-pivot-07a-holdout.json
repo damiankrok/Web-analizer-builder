@@ -1,6 +1,7 @@
 {
   "schemaVersion": "web-pivot-07a-holdout-1.0.0",
   "stage": "STAGE_WEB_PIVOT_07A_METRIC_ORTHOGRAPHIC_FACADE_METROLOGY",
+  "declaredAtCommit": "4f3b12c6352ab71f81f5586f0dc416a51110b782",
   "declaredBefore": "any Stage-07A facade metrology, elevation registration, anchor, edge-localization, fusion or feature code was written",
   "holdout": {
     "key": "H",
@@ -58,9 +59,25 @@
       "reason": "spent as the WEB-PIVOT-07 holdout: run once under that freeze, and its levels, vertical scale, roof topology, pitch, per-facade opening counts, rooflights, stacks and cross-source conflicts were reported",
       "roleNow": "HISTORICAL_HOLDOUT_WEB07"
     },
-    "F": { "name": "Dom w malinówkach 58 (E)", "reason": "spent as the WEB-PIVOT-06A holdout", "roleNow": "HISTORICAL_HOLDOUT_WEB06A" },
-    "E": { "name": "Dom w wisteriach 21", "reason": "spent as the WEB-PIVOT-06 holdout", "roleNow": "HISTORICAL_HOLDOUT_WEB06" },
-    "D": { "name": "Dom w kruszczykach 22", "reason": "spent as the WEB-02 holdout", "roleNow": "HISTORICAL_HOLDOUT_WEB02" },
-    "C": { "name": "Dom w kosaćcach 44", "reason": "spent as the WEB-01 holdout", "roleNow": "HISTORICAL_HOLDOUT_WEB01" }
+    "F": {
+      "name": "Dom w malinówkach 58 (E)",
+      "reason": "spent as the WEB-PIVOT-06A holdout",
+      "roleNow": "HISTORICAL_HOLDOUT_WEB06A"
+    },
+    "E": {
+      "name": "Dom w wisteriach 21",
+      "reason": "spent as the WEB-PIVOT-06 holdout",
+      "roleNow": "HISTORICAL_HOLDOUT_WEB06"
+    },
+    "D": {
+      "name": "Dom w kruszczykach 22",
+      "reason": "spent as the WEB-02 holdout",
+      "roleNow": "HISTORICAL_HOLDOUT_WEB02"
+    },
+    "C": {
+      "name": "Dom w kosaćcach 44",
+      "reason": "spent as the WEB-01 holdout",
+      "roleNow": "HISTORICAL_HOLDOUT_WEB01"
+    }
   }
 }
