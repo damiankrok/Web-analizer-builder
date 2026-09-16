@@ -310,11 +310,25 @@ type AxisFit = { translate: number; score: number; matched: number; residualM: n
  * The offset that puts the most material on the same lines.
  *
  * Every pairing of a moving face with a fixed one proposes an offset; the one
- * the most material votes for wins. Weighted by the length of wall behind
- * each face and by how much of it overlaps, so a long facade outvotes a
- * cupboard and two walls that merely happen to be collinear do not agree.
+ * the most material votes for wins. Weighted by the length of wall behind each
+ * face and by how much of it overlaps, so a long facade outvotes a cupboard
+ * and two walls that merely happen to be collinear do not agree.
+ *
+ * A face's own line is measured on one axis and its extent runs along the
+ * other, so the overlap term cannot be judged until the *other* axis has been
+ * fitted too. `extentShift` is that other axis's offset, and the caller fits
+ * each axis twice: once without asking for overlap at all, then again with
+ * the extents moved into place. Without the second pass a mirrored sheet
+ * scores as if none of its walls overlapped anything, and a mirror the
+ * drawings plainly show is missed.
  */
-function fitAxis(moving: readonly Face[], fixed: readonly Face[], toleranceM: number): AxisFit | null {
+function fitAxis(
+  moving: readonly Face[],
+  fixed: readonly Face[],
+  toleranceM: number,
+  extentShift: number,
+  requireOverlap: boolean,
+): AxisFit | null {
   if (moving.length === 0 || fixed.length === 0) return null
   const proposals = new Set<number>()
   for (const m of moving) for (const f of fixed) proposals.add(Math.round((f.at - m.at) * 1000) / 1000)
@@ -329,9 +343,10 @@ function fitAxis(moving: readonly Face[], fixed: readonly Face[], toleranceM: nu
       for (const f of fixed) {
         const d = Math.abs(m.at + translate - f.at)
         if (d > toleranceM) continue
-        const overlap = Math.min(m.toM, f.toM) - Math.max(m.fromM, f.fromM)
-        if (overlap <= 0) continue
-        const share = Number.isFinite(overlap) ? Math.min(1, overlap / Math.min(m.weight, f.weight)) : 1
+        const overlap = Math.min(m.toM + extentShift, f.toM) - Math.max(m.fromM + extentShift, f.fromM)
+        if (requireOverlap && overlap <= 0) continue
+        const share =
+          requireOverlap && Number.isFinite(overlap) ? Math.min(1, overlap / Math.min(m.weight, f.weight)) : 1
         const w = Math.min(m.weight, f.weight) * share
         const q = w * (1 - d / toleranceM)
         if (!bestPair || q > bestPair.q) bestPair = { q, d, w }
@@ -489,7 +504,7 @@ export function registerBuilding(
   }
 
   const checks = runChecks(
-    { masses, walls, roofs, slabs, storeyEnvelopes, registrations, voids },
+    { masses, walls, roofs, slabs, storeyEnvelopes, registrations, rooms, voids },
     toleranceM,
     candidate,
     fabrics,
@@ -615,16 +630,16 @@ function registerStorey(
   for (const rotation90 of [0, 1, 2, 3] as const) {
     for (const mirrorX of [false, true]) {
       const turned = own.map((f) => turnFace(f, rotation90, mirrorX))
-      const x = fitAxis(
-        turned.filter((f) => f.faceAxis === 'X'),
-        primaryFaces.filter((f) => f.faceAxis === 'X'),
-        toleranceM,
-      )
-      const z = fitAxis(
-        turned.filter((f) => f.faceAxis === 'Z'),
-        primaryFaces.filter((f) => f.faceAxis === 'Z'),
-        toleranceM,
-      )
+      const movingX = turned.filter((f) => f.faceAxis === 'X')
+      const movingZ = turned.filter((f) => f.faceAxis === 'Z')
+      const fixedX = primaryFaces.filter((f) => f.faceAxis === 'X')
+      const fixedZ = primaryFaces.filter((f) => f.faceAxis === 'Z')
+      // An X face's extent runs along Z and the other way about, so each pass
+      // needs the other axis's answer. First without overlap, then with it.
+      const roughX = fitAxis(movingX, fixedX, toleranceM, 0, false)
+      const roughZ = fitAxis(movingZ, fixedZ, toleranceM, 0, false)
+      const x = fitAxis(movingX, fixedX, toleranceM, roughZ?.translate ?? 0, true)
+      const z = fitAxis(movingZ, fixedZ, toleranceM, x?.translate ?? roughX?.translate ?? 0, true)
       trials.push({ rotation90, mirrorX, x, z, score: (x?.score ?? 0) + (z?.score ?? 0) })
     }
   }
@@ -1053,7 +1068,7 @@ function registerSection(
     }
     for (const direction of [1, -1] as const) {
       const moving = edges.map((e) => ({ ...e, faceAxis: axis, at: e.at * direction }))
-      const fit = fitAxis(moving, fixed, toleranceM)
+      const fit = fitAxis(moving, fixed, toleranceM, 0, false)
       if (fit) trials.push({ axis, direction, fit, throughM: roofThroughStorey(shell, masses, axis, direction, fit.translate) })
     }
   }
@@ -1494,6 +1509,7 @@ type CheckInput = {
   slabs: readonly RegisteredSlab[]
   storeyEnvelopes: ReadonlyArray<{ storey: string; envelope: Rect | null; baseM: number; topM: number; topSettled: boolean }>
   registrations: readonly SourceFrameRegistration[]
+  rooms: readonly RegisteredRoom[]
   voids: readonly Rect[]
 }
 
@@ -1680,18 +1696,32 @@ export function runChecks(
   // envelope was arrived at.
   const loose: string[] = []
   let facesTested = 0
-  for (const s of candidate.storeys) {
-    const fabric = fabrics.get(s.storey)
-    if (!fabric?.envelope) continue
-    const probe = interiorProbe(s)
-    if (!probe) continue
-    const e = fabric.envelope
-    const c = probe.cellM
+  for (const placedStorey of input.storeyEnvelopes) {
+    const e = placedStorey.envelope
+    if (!e) continue
+    const fabric = fabrics.get(placedStorey.storey)
+    const here = input.rooms.filter((r) => r.storey === placedStorey.storey)
+    if (here.length === 0) continue
+    const c = here[0].footprint.cellM
+    const probe = {
+      cellM: c,
+      at: (x: number, z: number): string | null => {
+        for (const r of here) {
+          if (x < r.box.x0 || x >= r.box.x1 || z < r.box.z0 || z >= r.box.z1) continue
+          const col = Math.floor((x - r.box.x0) / r.footprint.cellM)
+          const row = Math.floor((z - r.box.z0) / r.footprint.cellM)
+          if (col < 0 || col >= r.footprint.cols || row < 0 || row >= r.footprint.rows) continue
+          if (r.footprint.filled[row * r.footprint.cols + col] === '1') return r.id
+        }
+        return null
+      },
+    }
+    const s = { storey: placedStorey.storey }
     // An envelope face is the *outer* face of a wall, so the enclosed space
     // behind it starts a wall's thickness in. Look that far and no further:
     // the point is that something is enclosed behind this line, not that
     // something is enclosed somewhere on the sheet.
-    const reach = Math.max(c, ...fabric.runs.filter((r) => r.fabric.length > 0).map((r) => r.thicknessM)) + c
+    const reach = Math.max(c, ...(fabric?.runs ?? []).filter((r) => r.fabric.length > 0).map((r) => r.thicknessM)) + c
     const steps = Math.max(2, Math.ceil(reach / c))
     const inward: Array<{ name: string; hit: boolean }> = []
     const scan = (name: string, point: (t: number, depth: number) => { x: number; z: number }): void => {
@@ -1724,6 +1754,19 @@ export function runChecks(
         : `nothing is enclosed behind ${loose.join(', ')}`,
   )
 
+  // A doorway is a hole in the fabric, and fabric may not be drawn across it.
+  const filled = input.walls.filter((w) =>
+    w.openings.some((o) => w.fabric.some((f) => f.fromM < o.toM - 0.02 && f.toM > o.fromM + 0.02)),
+  )
+  say(
+    'openings-stay-open',
+    'no stretch of material is drawn across an opening',
+    filled.length === 0 ? 'PASS' : 'FAIL',
+    filled.length === 0
+      ? `${input.walls.reduce((n, w) => n + w.openings.length, 0)} openings, none bridged`
+      : `${filled.length}: ${filled.slice(0, 6).map((w) => w.id).join(', ')}`,
+  )
+
   // A void is a hole, and a hole may not be where fabric is.
   if (input.voids.length === 0) {
     say('voids-clear-of-fabric', 'every floor opening is clear of the fabric around it', 'UNRESOLVED', 'no floor opening is settled by two storeys')
@@ -1734,7 +1777,7 @@ export function runChecks(
           w.axis === 'X'
             ? { x0: Math.min(...w.fabric.map((f) => f.fromM)), x1: Math.max(...w.fabric.map((f) => f.toM)), z0: w.nearM, z1: w.farM }
             : { x0: w.nearM, x1: w.farM, z0: Math.min(...w.fabric.map((f) => f.fromM)), z1: Math.max(...w.fabric.map((f) => f.toM)) }
-        return rectArea(rectIntersect(box, v)) > 0.25 * rectArea(v)
+        return rectArea(rectIntersect(box, v)) > 0.1 * rectArea(v)
       }),
     )
     say(
@@ -1782,4 +1825,38 @@ function printedExtents(candidate: ArchitecturalSpecCandidate): { X: number | nu
     }
   }
   return { X: x, Z: z }
+}
+
+/**
+ * The oracles, run again over a building somebody has changed.
+ *
+ * §16's mutations need to corrupt a registered building and watch a check go
+ * red. Re-deriving the storey classification from the same candidate keeps the
+ * oracles honest: they measure the building they are given against the
+ * drawings, not against the assumptions that produced it.
+ */
+export function checkRegisteredBuilding(
+  building: RegisteredBuilding,
+  candidate: ArchitecturalSpecCandidate,
+  opts: RegisterOptions = DEFAULT_REGISTER,
+): CoherenceCheck[] {
+  const fabrics = new Map<string, StoreyFabric>()
+  for (const s of candidate.storeys) fabrics.set(s.storey, classifyStorey(s, opts.planMasses))
+  const cellM =
+    [...fabrics.values()].map((f) => f.occupancy?.cellM).find((c): c is number => c !== undefined) ?? 0.25
+  return runChecks(
+    {
+      masses: building.masses,
+      walls: building.walls,
+      roofs: building.roofs,
+      slabs: building.slabs,
+      storeyEnvelopes: building.storeyEnvelopes,
+      registrations: building.registrations,
+      rooms: building.rooms,
+      voids: building.voids,
+    },
+    cellM * opts.faceMatchCells,
+    candidate,
+    fabrics,
+  )
 }

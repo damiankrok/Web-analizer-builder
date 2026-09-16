@@ -35,7 +35,7 @@
  * through a balcony door puts enclosed space on both sides of a real
  * external wall, and that wall is still the wall.
  *
- * Nothing here reads a gold file, a project name or a coordinate. The only
+ * Nothing here reads a reference model, a project name or a coordinate. The only
  * numbers it introduces are in `DEFAULT_PLAN_MASSES`, and each is a fact
  * about how stairs and hatches are drawn rather than about this house.
  *
