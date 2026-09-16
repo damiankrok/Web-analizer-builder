@@ -74,12 +74,46 @@ await track('the page renders a WebGL canvas', async () =>
   }))
 
 await track('the model is actually drawn, not a blank canvas', async () => {
-  const shot = await page.locator('#canvasHost').screenshot()
-  // A blank canvas is one flat colour; a drawn model is not.
-  const set = new Set()
-  for (let i = 0; i < shot.length; i += 997) set.add(shot[i])
-  return set.size > 24
+  // Asking the page rather than the pixels: a screenshot's byte histogram is a
+  // proxy for "something was drawn" and a poor one, because a simpler model is
+  // not a blank one.
+  const drawn = await page.evaluate(() => {
+    const data = JSON.parse(document.getElementById('scene').textContent)
+    const tris = data.automatic.groups.reduce((n, g) => n + g.positions.length / 9, 0)
+    const canvas = document.querySelector('#canvasHost canvas')
+    return { tris, width: canvas ? canvas.width : 0, height: canvas ? canvas.height : 0 }
+  })
+  return drawn.tris > 1000 && drawn.width > 100 && drawn.height > 100
 })
+
+await track('every source frame used in 3D is registered', async () =>
+  page.evaluate(() => {
+    const data = JSON.parse(document.getElementById('scene').textContent)
+    return data.registration.registrations.length >= 3 &&
+      data.registration.registrations.every((r) => r.status === 'RESOLVED')
+  }))
+
+await track('no coherence check is failing', async () =>
+  page.evaluate(() => {
+    const data = JSON.parse(document.getElementById('scene').textContent)
+    return data.registration.checks.length >= 10 &&
+      data.registration.checks.every((c) => c.status !== 'FAIL') &&
+      document.querySelectorAll('#checks .mark.fail').length === 0
+  }))
+
+await track('the registration panel and the reference table are on the page', async () =>
+  page.evaluate(() => document.querySelectorAll('#frameKv li').length >= 4 &&
+    document.querySelectorAll('#checks li').length >= 10 &&
+    document.querySelectorAll('#massTable tbody tr').length >= 1 &&
+    document.querySelectorAll('#errorTable tbody tr').length >= 6))
+
+await track('the named acceptance views all place the camera', async () =>
+  page.evaluate(async () => {
+    if (!window.__cp) return false
+    for (const v of window.__cp.views) window.__cp.view(v)
+    window.__cp.setMode('auto')
+    return window.__cp.views.length === 6
+  }))
 
 await track('the truth panel carries the measured figures', async () =>
   page.evaluate(() => document.querySelectorAll('#planTables li').length >= 12 &&

@@ -175,12 +175,31 @@
   .kv .k { font-size: 13.5px; }
   .kv .k small { display: block; color: var(--graphite); font-size: 11.5px; line-height: 1.4; }
   .kv .val { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums;
-             font-size: 13px; text-align: right; white-space: nowrap; }
+             font-size: 13px; text-align: right; white-space: nowrap; overflow-wrap: anywhere; }
+  .kv .k { min-width: 0; }
 
   .targets { list-style: none; margin: 0; padding: 0; }
   .targets li { display: grid; grid-template-columns: auto 1fr; gap: 9px; padding: 8px 0;
                 border-bottom: 1px solid var(--rule-soft); font-size: 13px; }
   .targets .m { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; color: var(--graphite); }
+
+  .checks { list-style: none; margin: 14px 0 0; padding: 0; }
+  .checks li { display: grid; grid-template-columns: auto 1fr; gap: 9px; padding: 8px 0;
+               border-bottom: 1px solid var(--rule-soft); font-size: 13px; align-items: baseline; }
+  .checks .m { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; color: var(--graphite); display: block; margin-top: 2px; }
+  .mark { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: .04em;
+          padding: 2px 6px; border-radius: 2px; white-space: nowrap; }
+  .mark.pass { background: var(--ok-soft); color: var(--ok); }
+  .mark.fail { background: var(--annot-soft); color: var(--annot); }
+  .mark.open { background: var(--amber-soft); color: var(--amber); }
+
+  /* Wide enough to stay readable; the container scrolls rather than the page. */
+  table.grid { width: 100%; min-width: 340px; border-collapse: collapse; font-size: 12.5px; }
+  table.grid th, table.grid td { text-align: left; padding: 7px 8px 7px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  table.grid th { font-weight: 500; color: var(--graphite); font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; }
+  table.grid td.n { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+  table.grid td small { color: var(--graphite); display: block; font-size: 11.5px; line-height: 1.4; }
+  .scroll { overflow-x: auto; }
 
   details { border-top: 1px solid var(--rule-soft); }
   details > summary {
@@ -244,11 +263,26 @@
   <div class="legend" id="legend"></div>
 
   <section>
+    <h2>Is it one building?</h2>
+    <p class="sub" style="margin:0 0 10px">Each drawing is read in its own frame. These are the transforms
+      that put them in one, what each fit left over, and the checks that would have caught the
+      checkpoint’s first attempt.</p>
+    <ul class="kv" id="frameKv"></ul>
+    <ul class="checks" id="checks"></ul>
+  </section>
+
+  <section>
+    <h2>Masses and what sits on them</h2>
+    <div id="massTable"></div>
+  </section>
+
+  <section>
     <h2>Levels the section reading recovered</h2>
     <ul class="ladder" id="ladder"></ul>
     <p class="sub" style="margin-top:10px">Printed on the section as <span class="mono">−0,32 · ±0,00 · +3,06 · +4,67 · +7,95</span>.
       The knee-wall top is the one source-clear level this reading does not find, so every attic wall above
-      is drawn to the eave and marked unresolved rather than given a height nothing measured.</p>
+      is drawn to the eave and marked unresolved rather than given a height nothing measured. The garage
+      stops lower still, at the level its own flat roof bears on.</p>
   </section>
 
   <section>
@@ -276,6 +310,13 @@
   <section>
     <h2>Stage-07 acceptance, as measured</h2>
     <ul class="targets" id="targets"></ul>
+  </section>
+
+  <section>
+    <h2>Measured against the development reference</h2>
+    <p class="sub" style="margin:0 0 10px">Read once, after registration had finished, and used for nothing
+      else. The reference may measure a difference; it may not supply a transform, and it did not.</p>
+    <div id="errorTable"></div>
   </section>
 
   <section>
@@ -600,8 +641,10 @@
     if (state.mode !== 'gold') {
       rows.push([sw('#3d6f9e'), 'automatic, stated']);
       rows.push([sw('#b59156'), 'automatic, a dimension not settled']);
-      rows.push([sw('#b02a33'), 'gap the candidate cannot identify']);
-      rows.push([sw('#b08a3c'), 'roof — section frame, not registered to the plans']);
+      rows.push([sw('#2f5c86'), 'roof, bounded to the mass it bears on']);
+      rows.push([sw('#b9cde0'), 'room floor as the drawing encloses it']);
+      rows.push([sw('#d4a3a6'), 'one region, more than one room label']);
+      rows.push([sw('#4f9aa8'), 'glazing the candidate placed itself']);
     }
     if (state.mode !== 'auto') rows.push([sw('#8c9096'), state.mode === 'both' ? 'gold, shown as a reference volume' : 'gold, source-verified']);
     L.innerHTML = rows.map(function (r) { return '<span>' + r[0] + r[1] + '</span>'; }).join('');
@@ -685,6 +728,69 @@
     return '<li><span class="pill ' + (t.met ? 'p-ok' : 'p-bad') + '">' + (t.met ? 'met' : 'not met') + '</span>' +
       '<span>' + esc(t.target.replace(/^§30\s*/, '')) + '<br><span class="m">' + esc(t.measured) + '</span></span></li>';
   }).join('');
+
+  /* --- what registration settled, and what it left ---------------------- */
+  var R = DATA.registration;
+  var frameRows = [
+    ['Building frame', esc(R.frame.axes), R.frame.originFrom]
+  ];
+  R.registrations.forEach(function (r) {
+    var how = r.kind === 'SECTION'
+      ? 'along ' + r.alongAxis + (r.alongDirection < 0 ? ' backwards' : ' forwards') + ', shift ' + (r.alongAxis === 'Z' ? r.translateZ : r.translateX).toFixed(3) + ' m'
+      : 'turn ' + (r.rotation90 * 90) + '\u00b0' + (r.mirrorX ? ', mirrored' : '') + ', shift (' + r.translateX.toFixed(3) + ', ' + r.translateZ.toFixed(3) + ') m';
+    frameRows.push([
+      esc(r.sourceFrameId),
+      how + (r.matched ? ' \u00b7 ' + r.matched + ' faces agree' : ''),
+      r.residualM === null ? r.status : (r.residualM * 1000).toFixed(0) + ' mm rms'
+    ]);
+  });
+  if (R.printed) {
+    var P = R.printed;
+    var line = function (v) { return v === null ? '\u2014' : v.toFixed(2) + ' m'; };
+    frameRows.push(['Source overall dimensions',
+      'the longest dimension chain each plan prints, summed along its own line',
+      line(P.chainX) + ' \u00d7 ' + line(P.chainZ)]);
+    frameRows.push(['Registered building',
+      'the outer faces of the structural envelope, once the storeys are in one frame',
+      line(P.measuredX) + ' \u00d7 ' + line(P.measuredZ)]);
+  }
+  document.getElementById('frameKv').innerHTML = frameRows.map(function (r) {
+    return '<li><span class="k">' + r[0] + '<small>' + r[1] + '</small></span><span class="val">' + esc(r[2]) + '</span></li>';
+  }).join('');
+
+  document.getElementById('checks').innerHTML = R.checks.map(function (c) {
+    var cls = c.status === 'PASS' ? 'pass' : c.status === 'FAIL' ? 'fail' : 'open';
+    var label = c.status === 'PASS' ? 'pass' : c.status === 'FAIL' ? 'fail' : 'open';
+    return '<li><span class="mark ' + cls + '">' + label + '</span><span>' + esc(c.title) +
+      '<span class="m">' + esc(c.measured) + (c.toleranceM === null ? '' : ' \u00b7 within ' + (c.toleranceM * 1000).toFixed(0) + ' mm') + '</span></span></li>';
+  }).join('');
+
+  var roofByMass = {};
+  R.roofs.forEach(function (r) { if (r.hostMassId) roofByMass[r.hostMassId] = r; });
+  document.getElementById('massTable').innerHTML = '<div class="scroll"><table class="grid">' +
+    '<thead><tr><th>Mass</th><th>Footprint</th><th>Walls</th></tr></thead><tbody>' +
+    R.masses.map(function (m) {
+      var r = roofByMass[m.id];
+      var roof = !r ? 'no roof component bears on it'
+        : r.ridgeAtM === null
+          ? esc(r.topology.toLowerCase()) + ' roof, level at ' + (r.planes[0] ? r.planes[0].highLevelM.toFixed(2) + ' m' : 'an unstated height')
+          : esc(r.topology.toLowerCase()) + ' roof, ridge on ' + r.ridgeAxis + ' at ' + r.ridgeAtM.toFixed(2) + ' m; ' +
+            r.planes.filter(function (p) { return p.impliedPitchDeg !== null; })
+              .map(function (p) { return p.impliedPitchDeg.toFixed(1) + '\u00b0'; }).join(' and ') +
+            ' against the stated ' + (r.planes[0] && r.planes[0].statedPitchDeg !== null ? r.planes[0].statedPitchDeg.toFixed(1) + '\u00b0' : '\u2014');
+      return '<tr><td>' + esc(m.id) + '<small>' + esc(m.role.toLowerCase()) + ' \u00b7 ' + esc(m.storeys.join(', ')) + '<br>' + roof + '</small></td>' +
+        '<td class="n">' + (m.footprint.x1 - m.footprint.x0).toFixed(2) + ' \u00d7 ' + (m.footprint.z1 - m.footprint.z0).toFixed(2) + ' m</td>' +
+        '<td class="n">' + m.baseM.toFixed(2) + '\u2013' + m.topM.toFixed(2) + ' m' + (m.topSettled ? '' : '<small>top not settled</small>') + '</td></tr>';
+    }).join('') + '</tbody></table></div>' +
+    (R.unresolved.length ? '<p class="sub" style="margin-top:10px"><b>Left unresolved</b> ' + esc(R.unresolved.join('. ')) + '</p>' : '');
+
+  document.getElementById('errorTable').innerHTML = '<div class="scroll"><table class="grid">' +
+    '<thead><tr><th>Measure</th><th>Automatic</th><th>Reference</th><th>Difference</th></tr></thead><tbody>' +
+    DATA.gold.errorTable.map(function (r) {
+      return '<tr><td>' + esc(r.what) + '<small>' + esc(r.note) + '</small></td>' +
+        '<td class="n">' + esc(r.automatic) + '</td><td class="n">' + esc(r.reference) + '</td>' +
+        '<td class="n">' + (r.differenceM === null ? '\u2014' : (r.differenceM > 0 ? '+' : '') + r.differenceM.toFixed(3) + ' m') + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
 
   document.getElementById('drawings').innerHTML = DATA.drawings.map(function (d) {
     return '<figure><img src="' + esc(d.file) + '" alt="' + esc(d.label) + '" loading="lazy" width="' + d.width + '" height="' + d.height + '">' +

@@ -106,6 +106,128 @@ const goldTris: PackTri[] = gold.tris.map((t) => ({
   resolution: 'STATED',
 }))
 
+/**
+ * STAGE WEB-PIVOT-07R §14 — what the reference measures about the automatic
+ * model, now that the automatic model has passed its own gates.
+ *
+ * One direction only. The reference is read here, in a development script,
+ * after registration has finished; nothing it says reaches the analyzer, the
+ * registration or the scene. It may measure a difference. It may not supply a
+ * transform, and it does not: every number below is computed from the two
+ * finished models and used for nothing but this table.
+ */
+type ErrorRow = { what: string; automatic: string; reference: string; differenceM: number | null; note: string }
+
+function boundsOf(tris: ReadonlyArray<SceneTri>, keep: (t: SceneTri) => boolean): { x0: number; x1: number; y0: number; y1: number; z0: number; z1: number } | null {
+  let b: { x0: number; x1: number; y0: number; y1: number; z0: number; z1: number } | null = null
+  for (const t of tris) {
+    if (!keep(t)) continue
+    for (const p of [t.a, t.b, t.c]) {
+      if (!b) b = { x0: p.x, x1: p.x, y0: p.y, y1: p.y, z0: p.z, z1: p.z }
+      else {
+        b.x0 = Math.min(b.x0, p.x); b.x1 = Math.max(b.x1, p.x)
+        b.y0 = Math.min(b.y0, p.y); b.y1 = Math.max(b.y1, p.y)
+        b.z0 = Math.min(b.z0, p.z); b.z1 = Math.max(b.z1, p.z)
+      }
+    }
+  }
+  return b
+}
+
+function compareWithReference(): ErrorRow[] {
+  const rows: ErrorRow[] = []
+  const shell = boundsOf(gold.tris, (t) => t.layer === 'SHELL' && t.part === 'WALL')
+  const auto = registered.masses.reduce<{ x0: number; z0: number; x1: number; z1: number } | null>(
+    (acc, m) => (acc === null ? { ...m.footprint } : {
+      x0: Math.min(acc.x0, m.footprint.x0), z0: Math.min(acc.z0, m.footprint.z0),
+      x1: Math.max(acc.x1, m.footprint.x1), z1: Math.max(acc.z1, m.footprint.z1),
+    }),
+    null,
+  )
+  const say = (what: string, a: number | null, g: number | null, note: string): void => {
+    rows.push({
+      what,
+      automatic: a === null ? '\u2014' : `${a.toFixed(3)} m`,
+      reference: g === null ? '\u2014' : `${g.toFixed(3)} m`,
+      differenceM: a === null || g === null ? null : Math.round((a - g) * 1000) / 1000,
+      note,
+    })
+  }
+  if (auto && shell) {
+    say('west face', auto.x0, shell.x0, 'both frames put their origin on the north-west structural corner')
+    say('east face', auto.x1, shell.x1, 'the overall width')
+    say('north face', auto.z0, shell.z0, 'both frames put their origin on the north-west structural corner')
+    say('south face', auto.z1, shell.z1, 'the overall depth, which is where the two models disagree')
+    say('width', auto.x1 - auto.x0, shell.x1 - shell.x0, 'against the printed chain across the sheet')
+    say('depth', auto.z1 - auto.z0, shell.z1 - shell.z0, 'against the printed chain down the sheet \u2014 see the source overall dimensions above')
+  }
+  // Orientation: both models are axis-aligned, so the question is only whether
+  // the longer side runs the same way. A quarter-turn would show as 90.
+  if (auto && shell) {
+    const autoLongZ = auto.z1 - auto.z0 >= auto.x1 - auto.x0
+    const goldLongZ = shell.z1 - shell.z0 >= shell.x1 - shell.x0
+    rows.push({
+      what: 'orientation',
+      automatic: autoLongZ ? 'long axis runs Z' : 'long axis runs X',
+      reference: goldLongZ ? 'long axis runs Z' : 'long axis runs X',
+      differenceM: null,
+      note: autoLongZ === goldLongZ ? 'the same way round' : 'a quarter-turn apart',
+    })
+  }
+  const roof = registered.roofs.find((r) => r.ridgeLevelM !== null)
+  const goldRoof = boundsOf(gold.tris, (t) => t.layer === 'SHELL' && t.part === 'ROOF' && t.a.x < 7.5 && t.b.x < 7.5 && t.c.x < 7.5)
+  say('ridge level', roof?.ridgeLevelM ?? null, goldRoof?.y1 ?? null, 'the section\u2019s highest level marker against the reference roof\u2019s apex')
+  // The reference's ridge line, as the x at which its roof is highest.
+  let goldRidgeX: number | null = null
+  if (goldRoof) {
+    let best = -Infinity
+    for (const t of gold.tris) {
+      if (t.layer !== 'SHELL' || t.part !== 'ROOF') continue
+      for (const p of [t.a, t.b, t.c]) {
+        if (p.x > 7.5) continue
+        if (p.y > best) { best = p.y; goldRidgeX = p.x }
+      }
+    }
+  }
+  say('ridge position across the body', roof?.ridgeAtM ?? null, goldRidgeX, 'where the two slopes meet, measured along the axis the section cuts')
+  const goldSlab = boundsOf(gold.tris, (t) => t.layer === 'INTERIOR' && t.part === 'SLAB')
+  const storeyFloor = registered.levels.find((l) => l.role === 'STOREY_FLOOR')?.level.valueM ?? null
+  say('first-floor level', storeyFloor, goldSlab?.y1 ?? null, 'the level the upper storey stands on')
+  // Wall alignment: every automatic envelope face against the nearest face the
+  // reference draws on the same axis.
+  const goldFaces = { X: new Set<number>(), Z: new Set<number>() }
+  for (const t of gold.tris) {
+    if (t.layer !== 'SHELL' || t.part !== 'WALL') continue
+    for (const p of [t.a, t.b, t.c]) {
+      goldFaces.X.add(Math.round(p.x * 1000) / 1000)
+      goldFaces.Z.add(Math.round(p.z * 1000) / 1000)
+    }
+  }
+  const offsets: number[] = []
+  for (const w of registered.walls) {
+    if (w.role !== 'ENVELOPE') continue
+    const axis = w.axis === 'X' ? 'Z' : 'X'
+    for (const face of [w.nearM, w.farM]) {
+      let best = Infinity
+      for (const g of goldFaces[axis]) best = Math.min(best, Math.abs(g - face))
+      if (Number.isFinite(best)) offsets.push(best)
+    }
+  }
+  offsets.sort((a, b) => a - b)
+  rows.push({
+    what: 'envelope wall faces',
+    automatic: `${offsets.length} faces`,
+    reference: `${goldFaces.X.size + goldFaces.Z.size} lines`,
+    differenceM: offsets.length > 0 ? Math.round(offsets[Math.floor(offsets.length / 2)] * 1000) / 1000 : null,
+    note: offsets.length > 0
+      ? `median distance to the nearest reference face; the worst is ${offsets[offsets.length - 1].toFixed(3)} m`
+      : 'no envelope wall was registered',
+  })
+  return rows
+}
+
+const errorTable = compareWithReference()
+
 // --- source drawings, copied as published
 const manifest = JSON.parse(readFileSync(join(PACKAGE_DIR, 'manifest.json'), 'utf8')) as {
   assets: Array<{
@@ -205,13 +327,52 @@ const bundle = {
       eaveLevelM: r.eaveLevelM,
       overhangM: r.overhangM,
       status: r.status,
-      planes: r.planes.map((p) => ({ id: p.id, statedPitchDeg: p.statedPitchDeg, impliedPitchDeg: p.impliedPitchDeg, status: p.status })),
+      planes: r.planes.map((p) => ({
+        id: p.id,
+        statedPitchDeg: p.statedPitchDeg,
+        impliedPitchDeg: p.impliedPitchDeg,
+        lowLevelM: p.lowLevelM,
+        highLevelM: p.highLevelM,
+        status: p.status,
+      })),
       why: r.why,
     })),
     checks: registered.checks,
     unresolved: registered.unresolved,
+    // §15: what the drawings print as overall, beside what the registered
+    // building measures, so a reader can check the scale without the table.
+    printed: (() => {
+      const byLine = new Map<string, number>()
+      for (const st of candidate.storeys) {
+        for (const d of st.dimensions) {
+          const axis = d.owner.startsWith('X span') ? 'X' : d.owner.startsWith('Y span') ? 'Z' : null
+          if (!axis) continue
+          const line = d.owner.slice(d.owner.lastIndexOf(' ') + 1)
+          const key = `${st.storey}|${axis}|${line}`
+          byLine.set(key, (byLine.get(key) ?? 0) + d.valueM)
+        }
+      }
+      const longest = (axis: string): number | null => {
+        let best: number | null = null
+        for (const [key, sum] of byLine) if (key.split('|')[1] === axis) best = Math.max(best ?? 0, sum)
+        return best
+      }
+      const envelope = registered.masses.reduce<{ x0: number; z0: number; x1: number; z1: number } | null>(
+        (acc, m) => (acc === null ? { ...m.footprint } : {
+          x0: Math.min(acc.x0, m.footprint.x0), z0: Math.min(acc.z0, m.footprint.z0),
+          x1: Math.max(acc.x1, m.footprint.x1), z1: Math.max(acc.z1, m.footprint.z1),
+        }),
+        null,
+      )
+      return {
+        chainX: longest('X'),
+        chainZ: longest('Z'),
+        measuredX: envelope ? envelope.x1 - envelope.x0 : null,
+        measuredZ: envelope ? envelope.z1 - envelope.z0 : null,
+      }
+    })(),
   },
-  gold: { groups: pack(goldTris) },
+  gold: { groups: pack(goldTris), errorTable },
   drawings,
   truth: {
     floorPlan: planEval.map((s) => ({
@@ -304,3 +465,12 @@ console.log(`drawings:  ${drawings.length}`)
 console.log(`scene.json ${(bytes / 1e6).toFixed(2)} MB`)
 console.log(`index.html ${(readFileSync(join(OUT, 'index.html')).byteLength / 1e6).toFixed(2)} MB`)
 for (const n of auto.notes) console.log(`  ${n}`)
+console.log('\nregistration')
+for (const r of registered.registrations) console.log(`  ${r.sourceFrameId.padEnd(18)} ${r.status.padEnd(10)} ${r.why}`)
+console.log('\ncoherence')
+for (const c of registered.checks) console.log(`  [${c.status.padEnd(10)}] ${c.title} \u2014 ${c.measured}`)
+console.log('\nagainst the development reference (\u00a714, evaluator only)')
+for (const r of errorTable) {
+  console.log(`  ${r.what.padEnd(28)} auto ${r.automatic.padStart(10)}   ref ${r.reference.padStart(10)}   ` +
+    `${r.differenceM === null ? '' : `\u0394 ${r.differenceM > 0 ? '+' : ''}${r.differenceM.toFixed(3)} m`.padStart(14)}  ${r.note}`)
+}
