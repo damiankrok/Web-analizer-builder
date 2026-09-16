@@ -14,7 +14,7 @@
 | HEAD at the start | `a95e198e04fed40e80f8bf47a66f169c3c1e1bbb` |
 | underlying automatic candidate | `d53b289ec864e03d26155c29e1ec110030976b4a` |
 | working tree at the start | clean, no unknown changes |
-| HEAD at the end of the stage | `05a8309` plus this report |
+| HEAD at the end of the stage | `acbd968`, this report's own commit |
 
 The baseline check in §0 of the brief passed: the branch, the commit and the
 clean tree were all as expected, so nothing was stashed, reset or cleaned.
