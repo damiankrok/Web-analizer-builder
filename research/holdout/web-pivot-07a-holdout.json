@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "web-pivot-07a-holdout-1.0.0",
+  "stage": "STAGE_WEB_PIVOT_07A_METRIC_ORTHOGRAPHIC_FACADE_METROLOGY",
+  "declaredBefore": "any Stage-07A facade metrology, elevation registration, anchor, edge-localization, fusion or feature code was written",
+  "holdout": {
+    "key": "H",
+    "slug": "H-holdout",
+    "name": "Dom w cienistkach 6 (E) OZE",
+    "projectId": "mb0829362d0238",
+    "canonicalUrl": "https://www.archon.pl/projekty-domow/projekt-dom-w-cienistkach-6-e-oze-mb0829362d0238",
+    "sourcePackageId": "pkg_4ac044340b579604",
+    "sourcePackageSchemaVersion": "3.0.0",
+    "sourcePackageHash": "4ac044340b57960436c7b03a4a5b286419403a9d63f0393468b6f32eb280bc39",
+    "documentHash": "d5099f8c5d411180745cdd54970eb891d5d34fdb7ee38c801da16937479059bf",
+    "note": "the hash is the one the package rebuilds to from the page bytes committed at fixtures/H-holdout/page.html, which is how every run of H in this stage will build it. Rebuilt twice and identical."
+  },
+  "selectionBasis": {
+    "criterion": "two things, and nothing else: (1) the SourcePackage role classifier reports the drawings this stage consumes — at least one SECTION, four ELEVATION views and at least one DIMENSIONED floor plan; (2) the project's house family is not one already spent as A–G, so H is a different design rather than a sibling of a project whose drawings have been looked at",
+    "enumeration": "the families already spent are marcówki (A), bakopy (B), kosaćce (C), kruszczyki (D), wisterie (E), malinówki (F) and kostrzewy (G). Of the 13 families on https://www.archon.pl/projekty-domow the day this was declared, 8 remain: cienistki, lipienniki, litodory, przebiśniegi, rarytasy, renklody, telimy, zielistki. The first in alphabetical order is cienistki, and cienistki 6 (E) OZE is its only project on the listing. Its inventory was checked against the criterion and satisfied it, so no later candidate was consulted. No other property of any candidate was consulted.",
+    "observed": [
+      "SECTION / ALL / CLEAN",
+      "ELEVATION / ALL / CLEAN / FRONT",
+      "ELEVATION / ALL / CLEAN / REAR",
+      "ELEVATION / ALL / CLEAN / LEFT",
+      "ELEVATION / ALL / CLEAN / RIGHT",
+      "FLOOR_PLAN / GROUND / DIMENSIONED",
+      "FLOOR_PLAN / GROUND / AREA_LABELS",
+      "FLOOR_PLAN / UPPER_ATTIC / DIMENSIONED",
+      "FLOOR_PLAN / UPPER_ATTIC / AREA_LABELS",
+      "SITE_PLAN / UNKNOWN / CLEAN",
+      "PERSPECTIVE_RENDER x 4",
+      "14 assets, 10 analysable"
+    ],
+    "representationKind": "not assigned by hand. §6 of the stage brief adds a representationKind to every asset, derived from its document kind and the publisher's own presentation, and H will be given whatever that rule gives every other project. Nothing about H's images was opened to decide it.",
+    "notObserved": [
+      "no elevation image was decoded for inspection, rendered, measured or registered",
+      "no section image was decoded for inspection, rendered or measured",
+      "no plan image was decoded for inspection, rendered or measured",
+      "no registration anchor, scale, origin or residual was looked at",
+      "no opening position, width, height, sill or head was looked at",
+      "no recess, balcony, railing, portal, chimney or rooflight evidence was looked at",
+      "no printed dimension, level marker or pitch callout was read",
+      "no wall, room, door or plan opening value was transcribed",
+      "no facade of H has been seen by anyone in this stage"
+    ],
+    "note": "the role table above is what the automatic role classifier reported when the SourcePackage was built. It names which drawings exist, and nothing whatever about what any of them contains. H publishes two storey plans, which is a fact about the package inventory and is recorded here because the selection criterion is about inventory; it was not chosen for, and nothing about the building was inferred from it."
+  },
+  "rules": {
+    "tuning": "FORBIDDEN — no threshold, weight, tolerance, anchor rule, edge parameter or heuristic may be chosen against H",
+    "runs": "exactly one Stage-07A extraction run, after the Stage-07A code and configuration freeze",
+    "transcription": "FORBIDDEN — H gets no gold fixture",
+    "reporting": "self-consistency only. No accuracy claim is possible about H, because there is nothing to compare it to",
+    "afterTheRun": "no tuning of any kind inside this stage once H has been run, and no second extraction"
+  },
+  "supersedes": {
+    "G": {
+      "name": "Dom w kostrzewach 19",
+      "reason": "spent as the WEB-PIVOT-07 holdout: run once under that freeze, and its levels, vertical scale, roof topology, pitch, per-facade opening counts, rooflights, stacks and cross-source conflicts were reported",
+      "roleNow": "HISTORICAL_HOLDOUT_WEB07"
+    },
+    "F": { "name": "Dom w malinówkach 58 (E)", "reason": "spent as the WEB-PIVOT-06A holdout", "roleNow": "HISTORICAL_HOLDOUT_WEB06A" },
+    "E": { "name": "Dom w wisteriach 21", "reason": "spent as the WEB-PIVOT-06 holdout", "roleNow": "HISTORICAL_HOLDOUT_WEB06" },
+    "D": { "name": "Dom w kruszczykach 22", "reason": "spent as the WEB-02 holdout", "roleNow": "HISTORICAL_HOLDOUT_WEB02" },
+    "C": { "name": "Dom w kosaćcach 44", "reason": "spent as the WEB-01 holdout", "roleNow": "HISTORICAL_HOLDOUT_WEB01" }
+  }
+}

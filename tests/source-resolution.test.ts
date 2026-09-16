@@ -72,18 +72,20 @@ describe('holdout isolation (§28)', () => {
   it('registers exactly one holdout, and it is none of the observed projects', () => {
     const holdouts = PROJECTS.filter((p) => p.role === 'HOLDOUT')
     expect(holdouts).toHaveLength(1)
-    expect(holdouts[0].key).toBe('G')
+    expect(holdouts[0].key).toBe('H')
     // A holdout is spent once its extracted geometry has been looked at. C was
     // run under the WEB-01 freeze, D twice under WEB-02 — with its footprint,
     // ridge, eave and pitch reported, and a defect fixed against it — E once
     // under WEB-PIVOT-06, with its walls, openings, rooms and adjacencies
     // reported per storey, and F once under WEB-PIVOT-06A, with its doorways,
-    // host walls and room topology reported. None may be presented as
-    // untouched again.
+    // host walls and room topology reported, and G once under WEB-PIVOT-07,
+    // with its levels, pitch, per-facade opening counts and conflicts
+    // reported. None may be presented as untouched again.
     expect(PROJECTS.find((p) => p.key === 'C')?.role).toBe('HISTORICAL_HOLDOUT_WEB01')
     expect(PROJECTS.find((p) => p.key === 'D')?.role).toBe('HISTORICAL_HOLDOUT_WEB02')
     expect(PROJECTS.find((p) => p.key === 'E')?.role).toBe('HISTORICAL_HOLDOUT_WEB06')
     expect(PROJECTS.find((p) => p.key === 'F')?.role).toBe('HISTORICAL_HOLDOUT_WEB06A')
+    expect(PROJECTS.find((p) => p.key === 'G')?.role).toBe('HISTORICAL_HOLDOUT_WEB07')
   })
 
   it('never lets a spent holdout hold the HOLDOUT role again', () => {

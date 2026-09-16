@@ -1,6 +1,6 @@
 /** The development projects, and the one untouched holdout among them. */
 export type DevProject = {
-  key: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G'
+  key: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H'
   slug: string
   name: string
   url: string
@@ -22,6 +22,7 @@ export type DevProject = {
     | 'HISTORICAL_HOLDOUT_WEB02'
     | 'HISTORICAL_HOLDOUT_WEB06'
     | 'HISTORICAL_HOLDOUT_WEB06A'
+    | 'HISTORICAL_HOLDOUT_WEB07'
   description: string
 }
 
@@ -90,14 +91,26 @@ export const PROJECTS: readonly DevProject[] = [
     slug: 'G-holdout',
     name: 'Dom w kostrzewach 19',
     url: 'https://www.archon.pl/projekty-domow/projekt-dom-w-kostrzewach-19-m215297bb5224c',
+    role: 'HISTORICAL_HOLDOUT_WEB07',
+    description:
+      'The WEB-PIVOT-07 holdout, run once under that freeze. Its levels, vertical scale, roof ' +
+      'topology, pitch, per-facade opening counts, rooflights, stacks and conflicts were reported, ' +
+      'so its extracted geometry has been looked at and it is spent. Kept as a sixth regression ' +
+      'project.',
+  },
+  {
+    key: 'H',
+    slug: 'H-holdout',
+    name: 'Dom w cienistkach 6 (E) OZE',
+    url: 'https://www.archon.pl/projekty-domow/projekt-dom-w-cienistkach-6-e-oze-mb0829362d0238',
     role: 'HOLDOUT',
     description:
-      'The WEB-PIVOT-07 holdout, chosen before any section, datum, roof or elevation code was ' +
+      'The WEB-PIVOT-07A holdout, chosen before any facade metrology, registration or edge code was ' +
       'written. Selected on two things and nothing else: that the SourcePackage role classifier ' +
-      'reports the drawing roles Stage 07 consumes \u2014 a section, four technical elevations and ' +
-      'dimensioned plans \u2014 and that its house family is not one already spent as A\u2013F. No ' +
-      'section or elevation image has been decoded for inspection, no level, pitch, opening, ' +
-      'silhouette or roof-type value transcribed, and nothing tuned against it.',
+      'reports the drawings this stage consumes \u2014 a section, four elevation views and ' +
+      'dimensioned plans \u2014 and that its house family is not one already spent as A\u2013G. No ' +
+      'elevation, section or plan image has been decoded for inspection, no anchor, scale, opening, ' +
+      'level or feature value transcribed, and nothing tuned against it.',
   },
 ]
 
