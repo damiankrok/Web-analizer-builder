@@ -24,7 +24,7 @@ import {
 import { classifyStorey } from '../src/core/extract/plan-masses.js'
 import { placePoint, placedAxis, type SourceFrameRegistration } from '../src/core/extract/building-frame.js'
 import type { ArchitecturalSpecCandidate, CandidateStorey } from '../src/core/extract/spec-candidate.js'
-import { syntheticCandidate } from './frame-registration-fixture.js'
+import { syntheticCandidate, withApron } from './frame-registration-fixture.js'
 
 const clone = (c: ArchitecturalSpecCandidate): ArchitecturalSpecCandidate => JSON.parse(JSON.stringify(c))
 const status = (b: RegisteredBuilding, id: string): string => b.checks.find((c) => c.id === id)?.status ?? 'MISSING'
@@ -97,6 +97,28 @@ describe('§4, §10 what on a plan sheet is the building', () => {
       expect(r.why).toMatch(/one line/)
     }
     expect(registerBuilding(candidate).walls.some((w) => w.id.includes('tread'))).toBe(false)
+  })
+
+  it('reads the printed chain as a structural core and what projects past it', () => {
+    const fabric = classifyStorey(syntheticCandidate().storeys[0])
+    const z = fabric.chainReadings.find((r) => r.axis === 'Z')
+    expect(z).toBeDefined()
+    expect(z!.coreM).toBeCloseTo(14, 6)
+    expect(z!.fullM).toBeCloseTo(16, 6)
+    expect(z!.projections.map((p) => [p.end, Math.round(p.depthM * 100) / 100])).toEqual([
+      ['LOW', 1],
+      ['HIGH', 1],
+    ])
+  })
+
+  it('refuses a face the chain does not reach, however much material stands on it', () => {
+    const plain = classifyStorey(syntheticCandidate().storeys[0])
+    const withOne = classifyStorey(withApron().storeys[0])
+    // The apron is 0.6 m of material with a leaked region behind it, a metre
+    // past the last printed tick. Without the chain it is the south wall.
+    expect(withOne.runs.find((r) => r.wallId === 'GROUND:apron')).toBeDefined()
+    expect(withOne.envelope?.z1).toBeCloseTo(plain.envelope!.z1, 6)
+    expect(withOne.envelope?.z1).toBeLessThan(20)
   })
 
   it('divides the footprint into a two-storey body and a single-storey wing', () => {

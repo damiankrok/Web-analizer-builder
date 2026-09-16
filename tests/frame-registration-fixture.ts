@@ -16,6 +16,7 @@
  */
 import type {
   ArchitecturalSpecCandidate,
+  CandidateDimension,
   CandidateOpening,
   CandidateRoom,
   CandidateStorey,
@@ -71,6 +72,36 @@ function wall(storey: string, w: WallSpec): CandidateWall {
     centreM: (w.near + w.far) / 2,
     confidence: 0.9,
     provenance: { assetId: `${storey}-plan`, from: 'a wall band' },
+  }
+}
+
+function chain(
+  id: string,
+  storey: string,
+  text: string,
+  valueM: number,
+  axis: 'X' | 'Z',
+  baselineId: string,
+  fromM: number,
+  toM: number,
+): CandidateDimension {
+  return {
+    id,
+    storey,
+    text,
+    valueM,
+    status: 'SOURCE_EXACT',
+    owner: `${axis === 'X' ? 'X' : 'Y'} span of ${((toM - fromM) * 100 * PX_PER_CM).toFixed(1)} px on ${baselineId}`,
+    span: {
+      baselineId,
+      axis,
+      fromPx: fromM * 100 * PX_PER_CM,
+      toPx: toM * 100 * PX_PER_CM,
+      fromM,
+      toM,
+    },
+    confidence: 0.95,
+    provenance: { assetId: `${storey}-plan`, from: 'a printed chain segment' },
   }
 }
 
@@ -133,9 +164,15 @@ function ground(): CandidateStorey {
       room('GROUND', 'wing', 8.3, S + 5.3, 11.7, S + 13.7),
     ],
     adjacency: [],
+    // A printed chain down each side, whose ticks are the faces the drawing
+    // dimensions: across the sheet the whole 12 m width, and down it a metre
+    // of terrace, the 14 m structural core the wing reaches to, and a metre of
+    // entrance beyond it.
     dimensions: [
-      { id: 'd1', storey: 'GROUND', text: '1200', valueM: 12, status: 'SOURCE_EXACT', owner: 'X span of 480 px on hl_1', confidence: 0.95, provenance: { assetId: 'GROUND-plan', from: 'a printed chain segment' } },
-      { id: 'd2', storey: 'GROUND', text: '1400', valueM: 14, status: 'SOURCE_EXACT', owner: 'Y span of 560 px on vl_1', confidence: 0.95, provenance: { assetId: 'GROUND-plan', from: 'a printed chain segment' } },
+      chain('d1', 'GROUND', '1200', 12, 'X', 'hl_1', 0, 12),
+      chain('d2', 'GROUND', '100', 1, 'Z', 'vl_1', S - 1, S),
+      chain('d3', 'GROUND', '1400', 14, 'Z', 'vl_1', S, S + 14),
+      chain('d4', 'GROUND', '100', 1, 'Z', 'vl_1', S + 14, S + 15),
     ],
     unownedReadings: [],
   }
@@ -260,5 +297,26 @@ export function syntheticCandidate(): ArchitecturalSpecCandidate {
 export function withoutTerrace(): ArchitecturalSpecCandidate {
   const c = syntheticCandidate()
   c.storeys[0].walls = c.storeys[0].walls.filter((w) => !w.id.includes('terrace'))
+  return c
+}
+
+/**
+ * The same building with a driveway apron drawn beyond its south wall, and a
+ * flood that leaked out through the garage door into it.
+ *
+ * This is project A's real defect in miniature: a thick band of material a
+ * metre past the building, with what looks like enclosed space behind it, and
+ * no printed tick anywhere near it. Stage 07R's face rule took it for the
+ * building's south wall and made the house 1.5 m too deep.
+ */
+export function withApron(): ArchitecturalSpecCandidate {
+  const c = syntheticCandidate()
+  const S = 5
+  const ground = c.storeys[0]
+  ground.walls.push(wall('GROUND', { id: 'apron', axis: 'X', from: 8, to: 12, near: S + 15.2, far: S + 15.8 }))
+  const leaked = ground.rooms.find((r) => r.id === 'GROUND:wing')!
+  leaked.box.z1 = S + 15.2
+  const rows = Math.max(1, Math.round((leaked.box.z1 - leaked.box.z0) / CELL))
+  leaked.footprint = { ...leaked.footprint, rows, filled: '1'.repeat(leaked.footprint.cols * rows) }
   return c
 }

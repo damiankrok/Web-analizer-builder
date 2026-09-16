@@ -148,6 +148,27 @@ export type CandidateDimension = {
   status: 'SOURCE_EXACT' | 'SOURCE_DERIVED'
   /** What it measures, when that was established. */
   owner: string
+  /**
+   * Where on the sheet this segment is, when a chain placed it.
+   *
+   * A chain is not just a set of lengths: its ticks are the faces the drawing
+   * is dimensioning, and where they fall is the strongest statement a plan
+   * makes about what the building's extent *is*. Keeping only the length
+   * throws that away, and then nothing can tell a 12.60 m structural core from
+   * a 14.60 m architectural extent that includes a metre of terrace at each
+   * end.
+   *
+   * `fromM` and `toM` are in the storey's own plan frame, on `axis`; the
+   * pixels are kept beside them so a reader can go back to the sheet.
+   */
+  span: {
+    baselineId: string
+    axis: 'X' | 'Z'
+    fromPx: number
+    toPx: number
+    fromM: number
+    toM: number
+  } | null
   confidence: number
   provenance: CandidateProvenance
 }
@@ -368,6 +389,17 @@ export function buildSpecCandidate(
           o.owner.kind === 'INTERVAL'
             ? `${o.owner.axis} span of ${o.owner.lengthPx.toFixed(1)} px on ${o.owner.baselineId}`
             : '',
+        span:
+          o.owner.kind === 'INTERVAL'
+            ? {
+                baselineId: o.owner.baselineId,
+                axis: o.owner.axis === 'X' ? ('X' as const) : ('Z' as const),
+                fromPx: o.owner.fromPx,
+                toPx: o.owner.toPx,
+                fromM: o.owner.axis === 'X' ? xM(o.owner.fromPx) : zM(o.owner.fromPx),
+                toM: o.owner.axis === 'X' ? xM(o.owner.toPx) : zM(o.owner.toPx),
+              }
+            : null,
         confidence: o.confidence,
         provenance: provenance('a printed chain segment'),
       }))

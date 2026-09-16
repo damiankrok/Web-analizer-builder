@@ -43,6 +43,7 @@
  */
 import type { CandidateStorey, CandidateWall } from './spec-candidate.js'
 import { DEFAULT_PLAN_MODEL } from './plan-model.js'
+import { chainsOf, principalChain, readChain, type ChainReading } from './plan-chains.js'
 import type { Rect, Vec2 } from './building-frame.js'
 
 export type PlanMassOptions = {
@@ -111,6 +112,12 @@ export type StoreyFabric = {
   runs: ClassifiedRun[]
   /** The structural envelope's four faces, in the storey's own plan frame. */
   envelope: Rect | null
+  /**
+   * What the printed chains say, per axis: which stretch is the structural
+   * core, how far the drawing's own dimensions reach beyond it, and what the
+   * difference is made of. Null on an axis the sheet does not chain.
+   */
+  chainReadings: ChainReading[]
   occupancy: Occupancy | null
   /**
    * Runs of parallel tread-like lines. An *observation* about the drawing,
@@ -185,6 +192,7 @@ export function classifyStorey(storey: CandidateStorey, opts: PlanMassOptions = 
         why: 'the storey publishes no enclosed space to refer this run to',
       })),
       envelope: null,
+      chainReadings: [],
       occupancy: null,
       flights: [],
       notes,
@@ -341,13 +349,41 @@ export function classifyStorey(storey: CandidateStorey, opts: PlanMassOptions = 
   }
   const loose = envelopeOf(runs, 0)
   if (loose !== null) clipTo(loose)
-  const envelope = envelopeOf(runs)
+  const measured = envelopeOf(runs)
+
+  // §5: the drawing dimensions the building. Where a printed chain covers an
+  // axis, its ticks say which faces are the building's, and a face further out
+  // than every tick is not one however much material stands on it. That is
+  // what separates project A's 12.60 m structural core from the 14.60 m its
+  // chain spans — a metre of terrace at one end and a metre of entrance at the
+  // other, neither of which is a wall.
+  const chains = chainsOf(storey)
+  const chainReadings: ChainReading[] = []
+  let envelope = measured
+  if (measured !== null) {
+    for (const axis of ['X', 'Z'] as const) {
+      const chain = principalChain(chains, axis)
+      if (!chain) continue
+      const faces = runs
+        .filter((r) => r.role !== 'OUTSIDE_MASS' && r.role !== 'LINE_ONLY' && r.axis !== axis)
+        .flatMap((r) => [r.boundsLow ? r.nearM : null, r.boundsHigh ? r.farM : null])
+        .filter((f): f is number => f !== null)
+      const reading = readChain(chain, faces, cellM)
+      if (!reading) continue
+      chainReadings.push(reading)
+      envelope =
+        axis === 'X'
+          ? { ...envelope!, x0: reading.coreFromM, x1: reading.coreToM }
+          : { ...envelope!, z0: reading.coreFromM, z1: reading.coreToM }
+      notes.push(`${storey.storey} ${axis}: ${reading.why}`)
+    }
+  }
   if (envelope !== null) clipTo(envelope)
   const occupancy = occupancyOf(storey, runs, cellM)
   if (envelope === null) {
     notes.push(`${storey.storey}: no run has enclosed space behind a face, so this storey bounds nothing`)
   }
-  return { storey: storey.storey, runs, envelope, occupancy, flights, notes }
+  return { storey: storey.storey, runs, envelope, chainReadings, occupancy, flights, notes }
 }
 
 /**
