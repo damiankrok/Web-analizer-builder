@@ -196,6 +196,40 @@ export function classifyStorey(storey: CandidateStorey, opts: PlanMassOptions = 
   const lineMaxM = (DEFAULT_PLAN_MODEL.faceTolerancePx + 1) / storey.pxPerCm / 100
   const runs: ClassifiedRun[] = []
 
+  // Lines are decided first, because a flight of stairs is drawn as lines and
+  // the flood does not fill it. A wall on the far side of a flight has the
+  // building behind it just as surely as a wall on the far side of a room —
+  // on project B the southernmost wall of the house is exactly that, and
+  // asking only the flood loses a metre of building.
+  const flights = flightsOf(
+    storey.walls
+      .filter((w) => w.thicknessM <= lineMaxM)
+      .map((w) => ({
+        wallId: w.id,
+        axis: w.axis,
+        role: 'LINE_ONLY' as const,
+        nearM: w.nearM,
+        farM: w.farM,
+        thicknessM: w.thicknessM,
+        fromM: w.fromM,
+        toM: w.toM,
+        fabric: [],
+        boundsLow: false,
+        boundsHigh: false,
+        why: '',
+      })),
+    opts,
+  )
+  const insideAt = (x: number, z: number): string | null => {
+    const room = probe.at(x, z)
+    if (room !== null) return room
+    for (let i = 0; i < flights.length; i++) {
+      const f = flights[i]
+      if (x >= f.x0 && x <= f.x1 && z >= f.z0 && z <= f.z1) return `flight${i}`
+    }
+    return null
+  }
+
   for (const w of storey.walls) {
     if (w.thicknessM <= lineMaxM) {
       runs.push({
@@ -219,7 +253,7 @@ export function classifyStorey(storey: CandidateStorey, opts: PlanMassOptions = 
     }
 
     const sideAt = (along: number, offset: number): string | null =>
-      w.axis === 'X' ? probe.at(along, offset) : probe.at(offset, along)
+      w.axis === 'X' ? insideAt(along, offset) : insideAt(offset, along)
 
     const kept: Array<{ fromM: number; toM: number }> = []
     let sawLow = false
@@ -283,14 +317,17 @@ export function classifyStorey(storey: CandidateStorey, opts: PlanMassOptions = 
     })
   }
 
-  // Two passes. The first decides what each run *is*, and the faces of what
-  // is left settle the envelope. The second trims the fabric to that
-  // envelope, which is what separates a run merged across a terrace screen
-  // and a house wall — same line, one wall — from a wall the flood simply
-  // did not reach the far side of. Membership is decided once, by the first
-  // pass; the second only cuts material that stands outside the building.
-  const envelope = envelopeOf(runs)
-  if (envelope !== null) {
+  // Membership is decided once, above. What follows only trims material that
+  // stands outside the building, and it takes two rounds because the two
+  // questions depend on each other: how long a run of material is decides
+  // whether its face is a facade, and where the building's faces are decides
+  // how much of that run is the building at all. A run merged across a
+  // terrace screen and a house wall — same line, one wall — arrives fifteen
+  // metres long and would set the bar for "long enough" far too high.
+  //
+  // So: clip to the loosest envelope every face could support, measure the
+  // runs again, take the envelope those faces settle, and clip to that.
+  const clipTo = (envelope: Rect): void => {
     for (const run of runs) {
       if (run.role === 'OUTSIDE_MASS' || run.role === 'LINE_ONLY') continue
       const wall = storey.walls.find((w) => w.id === run.wallId)
@@ -302,8 +339,11 @@ export function classifyStorey(storey: CandidateStorey, opts: PlanMassOptions = 
         .filter((piece) => piece.toM > piece.fromM)
     }
   }
+  const loose = envelopeOf(runs, 0)
+  if (loose !== null) clipTo(loose)
+  const envelope = envelopeOf(runs)
+  if (envelope !== null) clipTo(envelope)
   const occupancy = occupancyOf(storey, runs, cellM)
-  const flights = flightsOf(runs, opts)
   if (envelope === null) {
     notes.push(`${storey.storey}: no run has enclosed space behind a face, so this storey bounds nothing`)
   }
@@ -317,13 +357,26 @@ export function classifyStorey(storey: CandidateStorey, opts: PlanMassOptions = 
  * line stops, and on project A the west wall's run is merged with the
  * terrace screen 15 m north of the house. Its *face* is still the west wall.
  */
-export function envelopeOf(runs: readonly ClassifiedRun[]): Rect | null {
+export function envelopeOf(runs: readonly ClassifiedRun[], minFaceShare = 0.1): Rect | null {
   let x0 = Infinity
   let x1 = -Infinity
   let z0 = Infinity
   let z1 = -Infinity
+  // A face of the building is a face a facade stands on. A stub of material
+  // beyond a flight of steps is a step, and letting it set the envelope moves
+  // the building's corner onto the garden path — which is the same mistake as
+  // the terrace, one scale down. "Long enough" is a tenth of the longest run
+  // of material this storey has on the same axis, so it is the drawing's own
+  // scale and not a metre picked here.
+  const longest = { X: 0, Z: 0 }
+  const lengthOf = (r: ClassifiedRun): number => r.fabric.reduce((n, f) => n + (f.toM - f.fromM), 0)
   for (const r of runs) {
     if (r.role === 'OUTSIDE_MASS' || r.role === 'LINE_ONLY') continue
+    longest[r.axis] = Math.max(longest[r.axis], lengthOf(r))
+  }
+  for (const r of runs) {
+    if (r.role === 'OUTSIDE_MASS' || r.role === 'LINE_ONLY') continue
+    if (lengthOf(r) < longest[r.axis] * minFaceShare) continue
     // An X-axis run's faces measure on Z; a Z-axis run's measure on X.
     if (r.axis === 'X') {
       if (r.boundsLow) z0 = Math.min(z0, r.nearM)

@@ -241,6 +241,11 @@ export type RegisteredBuilding = {
   roofs: RegisteredRoof[]
   glazing: RegisteredGlazing[]
   levels: CandidateLevel[]
+  /**
+   * Runs of parallel tread-like lines, placed. An observation about the
+   * drawing: a flight of stairs and a tiled floor look the same on one sheet.
+   */
+  flights: Array<{ storey: string; rect: Rect }>
   /** Flights agreed on by two storeys, which is what makes a void a void. */
   voids: Rect[]
   checks: CoherenceCheck[]
@@ -464,9 +469,10 @@ export function registerBuilding(
   if (sectionReg) registrations.push(sectionReg)
 
   // §7, §9: what the section and the levels put on top of the masses.
-  const roofs = placeRoofs(candidate, sectionReg, masses, unplaced)
+  const roofs = placeRoofs(candidate, sectionReg, masses, unplaced, toleranceM + (sectionReg?.residualM ?? 0))
   const slabs = placeSlabs(candidate, masses)
   const glazing = placeGlazing(candidate, walls, unplaced)
+  const flights = placedFlights(candidate.storeys, fabrics, byStorey)
   const voids = agreedVoids(candidate.storeys, fabrics, byStorey)
 
   // §9: a mass whose roof bears below its storey's nominal top stops there.
@@ -504,7 +510,7 @@ export function registerBuilding(
   }
 
   const checks = runChecks(
-    { masses, walls, roofs, slabs, storeyEnvelopes, registrations, rooms, voids },
+    { masses, walls, roofs, slabs, storeyEnvelopes, registrations, rooms, flights, voids },
     toleranceM,
     candidate,
     fabrics,
@@ -540,6 +546,7 @@ export function registerBuilding(
     roofs,
     glazing,
     levels,
+    flights,
     voids,
     checks,
     unplaced,
@@ -566,6 +573,7 @@ function empty(candidate: ArchitecturalSpecCandidate, notes: string[], unresolve
     roofs: [],
     glazing: [],
     levels: candidate.shell?.levels ?? [],
+    flights: [],
     voids: [],
     checks: [],
     unplaced: [],
@@ -1172,6 +1180,7 @@ function placeRoofs(
   sectionReg: SourceFrameRegistration | null,
   masses: readonly BuildingMass[],
   unplaced: Unplaced[],
+  snapM: number,
 ): RegisteredRoof[] {
   const shell = candidate.shell
   if (!shell) return []
@@ -1222,7 +1231,7 @@ function placeRoofs(
       })
       continue
     }
-    out.push(buildRoof(component.id, component.topology, host, cut, spans))
+    out.push(buildRoof(component.id, component.topology, host, cut, spans, snapM))
   }
   return out
 }
@@ -1247,9 +1256,19 @@ function buildRoof(
   host: BuildingMass,
   cut: 'X' | 'Z',
   spans: PlaneSpan[],
+  snapM: number,
 ): RegisteredRoof {
-  const massLo = cut === 'X' ? host.footprint.x0 : host.footprint.z0
-  const massHi = cut === 'X' ? host.footprint.x1 : host.footprint.z1
+  const massFaceLo = cut === 'X' ? host.footprint.x0 : host.footprint.z0
+  const massFaceHi = cut === 'X' ? host.footprint.x1 : host.footprint.z1
+  // The section shows where a plane stops being supported, not where the wall
+  // is, and the two are a registration residual apart. Where they are that
+  // close, the plane belongs on the wall. Where they are metres apart the
+  // section is cutting a roof that does not cover the whole mass, and
+  // stretching it to the mass face would invent a roof and flatten its pitch.
+  const supportLo = Math.min(...spans.map((s) => s.lo))
+  const supportHi = Math.max(...spans.map((s) => s.hi))
+  const massLo = Math.abs(supportLo - massFaceLo) <= snapM ? massFaceLo : supportLo
+  const massHi = Math.abs(supportHi - massFaceHi) <= snapM ? massFaceHi : supportHi
   const pitched = spans.filter((s) => s.plane.fallsTowards !== 'LEVEL')
   const ridgeLevelM = pitched.length > 0 ? Math.max(...pitched.map((s) => s.plane.ridgeLevel.valueM)) : null
   const eaveLevelM = pitched.length > 0 ? Math.min(...pitched.map((s) => s.plane.eaveLevel.valueM)) : null
@@ -1270,6 +1289,10 @@ function buildRoof(
   const ridgeAtM = ridgeVotes.length > 0 ? ridgeVotes.reduce((a, b) => a + b, 0) / ridgeVotes.length : null
   const ridgeAxis: 'X' | 'Z' | null = pitched.length > 0 ? (cut === 'X' ? 'Z' : 'X') : null
 
+  const coverage: Rect =
+    cut === 'X'
+      ? { x0: massLo, x1: massHi, z0: host.footprint.z0, z1: host.footprint.z1 }
+      : { x0: host.footprint.x0, x1: host.footprint.x1, z0: massLo, z1: massHi }
   const planes: RegisteredRoofPlane[] = []
   if (pitched.length >= 2 && ridgeAtM !== null && ridgeLevelM !== null && eaveLevelM !== null) {
     const clampedRidge = Math.min(Math.max(ridgeAtM, massLo), massHi)
@@ -1303,7 +1326,7 @@ function buildRoof(
       planes.push({
         id: s.plane.id,
         componentId: id,
-        footprint: host.footprint,
+        footprint: coverage,
         fallAxis: null,
         fallDirection: 0,
         highLevelM: level,
@@ -1324,7 +1347,7 @@ function buildRoof(
     id,
     topology,
     hostMassId: host.id,
-    footprint: host.footprint,
+    footprint: coverage,
     ridgeAxis,
     ridgeAtM: ridgeAtM === null ? null : Math.min(Math.max(ridgeAtM, massLo), massHi),
     ridgeLevelM,
@@ -1335,7 +1358,11 @@ function buildRoof(
     why:
       `the section cuts this component at ${Math.min(...spans.map((s) => s.lo)).toFixed(2)}..` +
       `${Math.max(...spans.map((s) => s.hi)).toFixed(2)} m along the building's ${cut}, which lands on ${host.id}; ` +
-      'the mass supplies the footprint, because a roof covers what it sits on, and the overhang stays unsettled',
+      `the mass supplies the extent along the ridge; across the cut it runs ${massLo.toFixed(2)}..${massHi.toFixed(2)} m, ` +
+      (massLo === massFaceLo && massHi === massFaceHi
+        ? 'both ends on the mass faces it bears on'
+        : 'where the section still shows it supported \u2014 stretching it to the mass would invent roof') +
+      ', and the overhang stays unsettled',
   }
 }
 
@@ -1463,6 +1490,22 @@ function placeGlazing(candidate: ArchitecturalSpecCandidate, walls: readonly Reg
   return out
 }
 
+/** Every storey's tread clusters, in the building's frame. */
+function placedFlights(
+  storeys: readonly CandidateStorey[],
+  fabrics: Map<string, StoreyFabric>,
+  byStorey: Map<string, SourceFrameRegistration>,
+): Array<{ storey: string; rect: Rect }> {
+  const out: Array<{ storey: string; rect: Rect }> = []
+  for (const s of storeys) {
+    const reg = byStorey.get(s.storey)
+    const fabric = fabrics.get(s.storey)
+    if (!reg || reg.status === 'UNRESOLVED' || !fabric) continue
+    for (const f of fabric.flights) out.push({ storey: s.storey, rect: placeRect(reg, f) })
+  }
+  return out
+}
+
 /**
  * A hole in a floor is a hole two storeys agree about.
  *
@@ -1510,6 +1553,7 @@ type CheckInput = {
   storeyEnvelopes: ReadonlyArray<{ storey: string; envelope: Rect | null; baseM: number; topM: number; topSettled: boolean }>
   registrations: readonly SourceFrameRegistration[]
   rooms: readonly RegisteredRoom[]
+  flights: ReadonlyArray<{ storey: string; rect: Rect }>
   voids: readonly Rect[]
 }
 
@@ -1627,23 +1671,66 @@ export function runChecks(
         bad.length === 0 ? 'PASS' : 'FAIL',
         bad.length === 0 ? `${pitched.length} pitched components` : `${bad.map((r) => r.id).join(', ')} run across`,
       )
-      const off = pitched
-        .map((r) => {
-          const mass = input.masses.find((m) => m.id === r.hostMassId)
-          if (!mass) return { id: r.id, d: Infinity }
-          const lo = r.ridgeAxis === 'X' ? mass.footprint.z0 : mass.footprint.x0
-          const hi = r.ridgeAxis === 'X' ? mass.footprint.z1 : mass.footprint.x1
-          return { id: r.id, d: Math.abs(r.ridgeAtM! - (lo + hi) / 2) }
-        })
-        .sort((a, b) => b.d - a.d)[0]
+      // The ridge is derived from the section's own pitch and eave, so it
+      // lands where the section puts it — but the eave is then snapped onto
+      // the wall it bears on where the two are within a registration
+      // residual. This is the check that the snap did not distort the roof:
+      // each slope's geometry has to still work out at the pitch the sources
+      // state. A registration offset that is wrong by half a metre shows up
+      // here as a degree or two of pitch that nobody printed.
+      const pitches = pitched.flatMap((r) =>
+        r.planes
+          .filter((p) => p.impliedPitchDeg !== null && p.statedPitchDeg !== null && Number.isFinite(p.statedPitchDeg))
+          .map((p) => ({ id: p.id, d: Math.abs(p.impliedPitchDeg! - p.statedPitchDeg!) })),
+      )
+      if (pitches.length === 0) {
+        say('pitch-agrees', 'each slope works out at the pitch the sources state', 'UNRESOLVED', 'no plane has both a stated and an implied pitch')
+      } else {
+        const worst = [...pitches].sort((a, b) => b.d - a.d)[0]
+        say(
+          'pitch-agrees',
+          'each slope works out at the pitch the sources state',
+          worst.d <= 2 ? 'PASS' : 'FAIL',
+          `${worst.id} is ${worst.d.toFixed(2)}\u00b0 from the stated pitch`,
+          null,
+        )
+      }
+      const outside = pitched.filter((r) => {
+        const mass = input.masses.find((m) => m.id === r.hostMassId)
+        if (!mass) return true
+        const lo = r.ridgeAxis === 'X' ? mass.footprint.z0 : mass.footprint.x0
+        const hi = r.ridgeAxis === 'X' ? mass.footprint.z1 : mass.footprint.x1
+        return r.ridgeAtM! < lo - toleranceM || r.ridgeAtM! > hi + toleranceM
+      })
       say(
-        'ridge-centred',
-        'the ridge the section fits lands near the middle of its mass',
-        off.d <= 0.5 ? 'PASS' : 'FAIL',
-        `${off.id} is ${(off.d * 1000).toFixed(0)} mm off centre`,
-        0.5,
+        'ridge-inside-mass',
+        'the ridge falls inside the mass it covers',
+        outside.length === 0 ? 'PASS' : 'FAIL',
+        outside.length === 0 ? `${pitched.length} pitched components` : `${outside.map((r) => r.id).join(', ')} sit outside`,
+        toleranceM,
       )
     }
+  }
+
+  // How much of each mass the section actually shows a roof over. Less than
+  // all of it is not an error: it means the cut does not reach that far, and
+  // inventing the rest is what §7 forbids.
+  if (input.masses.length > 0 && roofsPlaced.length > 0) {
+    const worst = input.masses
+      .map((m) => {
+        const covered = roofsPlaced
+          .filter((r) => r.hostMassId === m.id)
+          .reduce((n, r) => n + rectArea(rectIntersect(m.footprint, r.footprint!)), 0)
+        return { id: m.id, share: rectArea(m.footprint) > 0 ? covered / rectArea(m.footprint) : 0 }
+      })
+      .sort((a, b) => a.share - b.share)[0]
+    say(
+      'roof-covers-mass',
+      'the section shows a roof over the whole of every mass',
+      worst.share >= 0.95 ? 'PASS' : 'UNRESOLVED',
+      `${worst.id} is ${(worst.share * 100).toFixed(0)}% covered`,
+      null,
+    )
   }
 
   // No wall stands on its own with nothing to hold it up.
@@ -1702,10 +1789,15 @@ export function runChecks(
     const fabric = fabrics.get(placedStorey.storey)
     const here = input.rooms.filter((r) => r.storey === placedStorey.storey)
     if (here.length === 0) continue
+    const stairs = input.flights.filter((f) => f.storey === placedStorey.storey)
     const c = here[0].footprint.cellM
     const probe = {
       cellM: c,
       at: (x: number, z: number): string | null => {
+        for (let i = 0; i < stairs.length; i++) {
+          const f = stairs[i].rect
+          if (x >= f.x0 && x <= f.x1 && z >= f.z0 && z <= f.z1) return `flight${i}`
+        }
         for (const r of here) {
           if (x < r.box.x0 || x >= r.box.x1 || z < r.box.z0 || z >= r.box.z1) continue
           const col = Math.floor((x - r.box.x0) / r.footprint.cellM)
@@ -1743,12 +1835,12 @@ export function runChecks(
   }
   say(
     'origin-from-structure',
-    'every envelope face has enclosed space behind it, so no terrace edge defines the building',
+    'every envelope face has the building behind it, so no terrace edge defines it',
     facesTested === 0 ? 'UNRESOLVED' : loose.length === 0 ? 'PASS' : 'FAIL',
     facesTested === 0
       ? 'no storey published an envelope'
       : loose.length === 0
-        ? `${facesTested} envelope faces, each with rooms behind it; ` +
+        ? `${facesTested} envelope faces, each with rooms or a drawn flight behind it; ` +
           `${candidate.storeys.reduce((n, s) => n + s.walls.length, 0) - input.walls.length} of ` +
           `${candidate.storeys.reduce((n, s) => n + s.walls.length, 0)} runs were kept out of the building`
         : `nothing is enclosed behind ${loose.join(', ')}`,
@@ -1853,6 +1945,7 @@ export function checkRegisteredBuilding(
       storeyEnvelopes: building.storeyEnvelopes,
       registrations: building.registrations,
       rooms: building.rooms,
+      flights: building.flights,
       voids: building.voids,
     },
     cellM * opts.faceMatchCells,
