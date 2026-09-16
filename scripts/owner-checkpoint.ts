@@ -17,7 +17,9 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { marcowkiGoldScene } from '../src/core/wallspec/marcowki-roof-features-fixture.js'
-import { candidateToScene, type Candidate, type CheckpointTri } from '../src/checkpoint/candidate-to-scene.js'
+import { registeredToScene } from '../src/checkpoint/registered-to-scene.js'
+import { registerBuilding } from '../src/core/extract/register-building.js'
+import type { ArchitecturalSpecCandidate } from '../src/core/extract/spec-candidate.js'
 import type { SceneTri } from '../src/core/wallspec/marcowki-facade-fixture.js'
 import { assetFileName } from '../src/node/package-store.js'
 
@@ -85,13 +87,15 @@ mkdirSync(join(OUT, 'src'), { recursive: true })
 
 // --- the automatic candidate, exactly as the frozen runs left it
 if (!existsSync(CANDIDATE)) throw new Error(`${CANDIDATE} is missing; the Stage-07 run writes it`)
-const candidate = JSON.parse(readFileSync(CANDIDATE, 'utf8')) as Candidate & Record<string, unknown>
-const auto = candidateToScene(candidate)
+const candidate = JSON.parse(readFileSync(CANDIDATE, 'utf8')) as ArchitecturalSpecCandidate
+const registered = registerBuilding(candidate)
+const auto = registeredToScene(registered)
 
 // --- the gold model, compiled the way the Stage-05A tests compile it
 const gold = marcowkiGoldScene()
 
-const goldTris: CheckpointTri[] = gold.tris.map((t) => ({
+type PackTri = Parameters<typeof pack>[0][number]
+const goldTris: PackTri[] = gold.tris.map((t) => ({
   a: t.a,
   b: t.b,
   c: t.c,
@@ -170,7 +174,42 @@ const bundle = {
   automatic: {
     groups: pack(auto.tris),
     undrawable: auto.undrawable,
-    notes: auto.notes,
+    notes: [...auto.notes, ...registered.notes],
+  },
+  registration: {
+    frame: registered.frame,
+    registrations: registered.registrations.map((r) => ({
+      sourceFrameId: r.sourceFrameId,
+      kind: r.kind,
+      status: r.status,
+      rotation90: r.rotation90,
+      mirrorX: r.mirrorX,
+      translateX: r.translateX,
+      translateZ: r.translateZ,
+      alongAxis: r.alongAxis,
+      alongDirection: r.alongDirection,
+      residualM: r.residualM,
+      matched: r.matched,
+      why: r.why,
+    })),
+    masses: registered.masses,
+    storeyEnvelopes: registered.storeyEnvelopes,
+    roofs: registered.roofs.map((r) => ({
+      id: r.id,
+      topology: r.topology,
+      hostMassId: r.hostMassId,
+      footprint: r.footprint,
+      ridgeAxis: r.ridgeAxis,
+      ridgeAtM: r.ridgeAtM,
+      ridgeLevelM: r.ridgeLevelM,
+      eaveLevelM: r.eaveLevelM,
+      overhangM: r.overhangM,
+      status: r.status,
+      planes: r.planes.map((p) => ({ id: p.id, statedPitchDeg: p.statedPitchDeg, impliedPitchDeg: p.impliedPitchDeg, status: p.status })),
+      why: r.why,
+    })),
+    checks: registered.checks,
+    unresolved: registered.unresolved,
   },
   gold: { groups: pack(goldTris) },
   drawings,

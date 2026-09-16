@@ -310,15 +310,15 @@
      cannot identify. */
   var GLASSY = { GLASS: 1, ROOF_GLAZING: 1, RAILING_GLASS: 1, DOOR_PANEL: 1, GARAGE_PANEL: 1 };
 
+  var UNSETTLED = 0xb59156, SETTLED = 0x3d6f9e;
   function autoStyle(part, resolution) {
-    if (part === 'AUTO_ROOM') return { color: 0xb9cde0, opacity: 0.5, flat: true };
-    if (part === 'AUTO_ROOM_UNRESOLVED') return { color: 0xd4a3a6, opacity: 0.5, flat: true };
-    if (part === 'AUTO_UNKNOWN_GAP') return { color: 0xb02a33, opacity: 0.66 };
-    if (part === 'AUTO_OPENING') return { color: 0x6f9fcc, opacity: 0.4 };
-    if (part === 'AUTO_GLASS') return { color: 0x4f9aa8, opacity: 0.52 };
-    if (part === 'AUTO_ROOF') return { color: 0xb08a3c, opacity: 0.6, wire: true };
-    if (resolution === 'PARTLY_UNRESOLVED') return { color: 0xb59156, opacity: 1 };
-    return { color: 0x3d6f9e, opacity: 1 };
+    var un = resolution === 'PARTLY_UNRESOLVED' || resolution === 'UNRESOLVED';
+    if (part === 'FLOOR') return { color: un ? 0xd4a3a6 : 0xb9cde0, opacity: 0.62, flat: true };
+    if (part === 'GLASS') return { color: 0x4f9aa8, opacity: 0.55 };
+    if (part === 'SLAB') return { color: un ? 0xc2a878 : 0x6d8aa6, opacity: 1 };
+    if (part === 'ROOF') return { color: un ? UNSETTLED : 0x2f5c86, opacity: 1 };
+    if (part === 'GABLE') return { color: UNSETTLED, opacity: 1 };
+    return { color: un ? UNSETTLED : SETTLED, opacity: 1 };
   }
 
   var scene = new THREE.Scene();
@@ -328,7 +328,9 @@
   var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   host.appendChild(renderer.domElement);
-  var camera = new THREE.PerspectiveCamera(40, 1, 0.05, 900);
+  var perspCam = new THREE.PerspectiveCamera(40, 1, 0.05, 900);
+  var orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, -400, 900);
+  var camera = perspCam;
 
   // Enough light to read the form, not enough to blow the palette out: these
   // surfaces carry meaning by colour, so they have to stay the colour they are.
@@ -338,6 +340,7 @@
 
   var meshes = [];
   var bounds = new THREE.Box3();
+  var autoBounds = new THREE.Box3();
 
   function addGroup(g, which) {
     var geo = new THREE.BufferGeometry();
@@ -368,6 +371,7 @@
     }
     meshes.push(rec);
     bounds.union(geo.boundingBox);
+    if (which === 'auto') autoBounds.union(geo.boundingBox);
   }
 
   DATA.automatic.groups.forEach(function (g) { addGroup(g, 'auto'); });
@@ -413,14 +417,22 @@
     draw();
   }
 
-  /* --- camera --------------------------------------------------------- */
+  /* --- camera ---------------------------------------------------------
+     Two cameras on one orbit. The perspective one is what a person turns the
+     model with; the orthographic one is what an elevation is, and the
+     acceptance views need both. */
   var az = 0.72, el = 0.36, dist = radius * 2.5;
   var target = centre.clone();
+  function shownBounds() { return state.mode === 'auto' ? autoBounds : bounds; }
+  function shownRadius() {
+    var b = shownBounds();
+    return b.isEmpty() ? radius : Math.max(2, b.getSize(new THREE.Vector3()).length() / 2);
+  }
   /** The distance at which the model's bounding sphere fits this viewport. */
   function fitDistance() {
-    var vFov = (camera.fov * Math.PI) / 180;
-    var hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
-    return (radius * 1.12) / Math.sin(Math.min(vFov, hFov) / 2);
+    var vFov = (perspCam.fov * Math.PI) / 180;
+    var hFov = 2 * Math.atan(Math.tan(vFov / 2) * perspCam.aspect);
+    return (shownRadius() * 1.12) / Math.sin(Math.min(vFov, hFov) / 2);
   }
   function place() {
     camera.position.set(
@@ -429,8 +441,52 @@
       target.z + Math.cos(az) * Math.cos(el) * dist
     );
     camera.lookAt(target);
+    if (camera === orthoCam) {
+      var r = shownRadius() * 1.08;
+      var aspect = Math.max(0.2, renderer.domElement.clientWidth / Math.max(1, renderer.domElement.clientHeight));
+      orthoCam.left = -r * aspect; orthoCam.right = r * aspect;
+      orthoCam.top = r; orthoCam.bottom = -r;
+      orthoCam.updateProjectionMatrix();
+    }
   }
-  function resetView() { az = 0.72; el = 0.36; dist = fitDistance(); target = centre.clone(); place(); draw(); }
+  function resetView() {
+    camera = perspCam;
+    az = 0.72; el = 0.36;
+    var b = shownBounds();
+    target = (b.isEmpty() ? bounds : b).getCenter(new THREE.Vector3());
+    dist = fitDistance();
+    place(); draw();
+  }
+
+  /* Named views, for the acceptance renders and the reset control. Exposed so
+     the capture harness drives exactly what a reader sees, rather than a
+     second viewer nobody looks at. */
+  var VIEWS = {
+    'front-three-quarter': { az: 0.72, el: 0.36, ortho: false, roof: true, ground: true, attic: true },
+    'rear-three-quarter': { az: 0.72 + Math.PI, el: 0.36, ortho: false, roof: true, ground: true, attic: true },
+    'ground-roof-off': { az: 0.72, el: 0.95, ortho: false, roof: false, ground: true, attic: false },
+    'attic-roof-off': { az: 0.72, el: 0.95, ortho: false, roof: false, ground: false, attic: true },
+    'side-orthographic': { az: Math.PI / 2, el: 0, ortho: true, roof: true, ground: true, attic: true },
+    'front-orthographic': { az: 0, el: 0, ortho: true, roof: true, ground: true, attic: true }
+  };
+  window.__cp = {
+    views: Object.keys(VIEWS),
+    setMode: function (m) { setMode(m); },
+    view: function (name) {
+      var v = VIEWS[name];
+      if (!v) throw new Error('no such view: ' + name);
+      state.roof = v.roof; state.ground = v.ground; state.attic = v.attic;
+      press('tRoof', v.roof); press('tGround', v.ground); press('tAttic', v.attic);
+      camera = v.ortho ? orthoCam : perspCam;
+      az = v.az; el = v.el;
+      var b = shownBounds();
+      target = (b.isEmpty() ? bounds : b).getCenter(new THREE.Vector3());
+      dist = fitDistance() * 0.78;
+      resize();
+      apply();
+      return name;
+    }
+  };
 
   var labelPool = [];
   function draw() {
@@ -465,8 +521,8 @@
   function resize() {
     var w = host.clientWidth, h = host.clientHeight;
     renderer.setSize(w, h, false);
-    camera.aspect = w / Math.max(1, h);
-    camera.updateProjectionMatrix();
+    perspCam.aspect = w / Math.max(1, h);
+    perspCam.updateProjectionMatrix();
     if (!fitted) { dist = fitDistance(); fitted = true; }
     place(); draw();
   }
